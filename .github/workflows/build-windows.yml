@@ -17,7 +17,7 @@ jobs:
       - name: Install dependencies
         run: |
           pip install --upgrade pip
-          pip install customtkinter librosa scipy soundfile pyinstaller pyarmor numba soxr pillow scikit-learn requests
+          pip install customtkinter librosa scipy soundfile pyinstaller numba soxr pillow scikit-learn requests
 
       - name: Download ffmpeg
         run: |
@@ -25,23 +25,12 @@ jobs:
           7z x ffmpeg.zip -offmpeg_extract
           copy ffmpeg_extract\ffmpeg-master-latest-win64-gpl\bin\ffmpeg.exe resources\ffmpeg.exe
 
-      - name: Register PyArmor license
-        env:
-          PYARMOR_LICENSE: ${{ secrets.PYARMOR_LICENSE }}
-        run: |
-          mkdir -p $HOME/.pyarmor
-          echo $env:PYARMOR_LICENSE | python -c "import sys,base64; sys.stdout.buffer.write(base64.b64decode(sys.stdin.read().strip()))" > $HOME/.pyarmor/license.lic
-
-      - name: Obfuscate with PyArmor
-        run: |
-          pyarmor gen --output dist_obf main.py app/
-
       - name: Detect PyArmor runtime name
         id: pyarmor_rt
         shell: python
         run: |
           import os, glob
-          runtimes = glob.glob("dist_obf/pyarmor_runtime_*")
+          runtimes = glob.glob("dist_obf_win/pyarmor_runtime_*")
           if runtimes:
               name = os.path.basename(runtimes[0])
               print(f"Found runtime: {name}")
@@ -53,7 +42,7 @@ jobs:
 
       - name: Build with PyInstaller
         run: |
-          cd dist_obf
+          cd dist_obf_win
           pyinstaller --name "PulseEdit" `
             --windowed `
             --noconfirm `
@@ -93,7 +82,7 @@ jobs:
 
       - name: Create ZIP
         run: |
-          cd dist_obf\dist
+          cd dist_obf_win\dist
           7z a -tzip "..\..\PulseEdit-Windows.zip" "PulseEdit"
 
       - name: Upload artifact
