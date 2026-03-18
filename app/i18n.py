@@ -1,0 +1,366 @@
+"""Internationalization — English (default) + Italian."""
+
+STRINGS = {
+    "en": {
+        # Main window
+        "app_title": "Pulse Edit",
+        "subtitle": "Auto edit synced to beats in DaVinci Resolve",
+        "connecting": "Connecting to Resolve...",
+        "resolve_not_found": "DaVinci Resolve not found. Launch it and click Refresh.",
+        "no_project": "No project open in Resolve.",
+        "no_timeline": "No active timeline.",
+        "connected": "Connected \u2014 {name} ({fps} fps)",
+        "language": "Language",
+        # Step 1
+        "step1_title": "Step 1 \u2014 Detect Beats",
+        "audio_track": "Audio track",
+        "no_tracks": "No tracks found",
+        "no_audio_tracks": "No audio tracks found",
+        "sensitivity": "Sensitivity",
+        "sensitivity_hint": "Low = only strong beats | High = more beats detected",
+        "time_signature": "Time signature",
+        "place_markers": "Place markers on timeline",
+        "detect_btn": "Detect Beats",
+        "detecting": "Detecting...",
+        "beats_detected": "BPM: {bpm:.0f} | {count} beats | avg {avg:.2f}s",
+        "no_beats": "No beats detected!",
+        "audio_not_found": "Audio file not found!",
+        "placing_markers_progress": "Placing markers... {i}/{total}",
+        # Step 2
+        "step2_title": "Step 2 \u2014 Auto-Edit",
+        "folder": "Media Pool folder",
+        "clips_found": "{count} video clips found",
+        "no_clips": "No video clips in this folder",
+        "clip_order": "Clip order",
+        "order_sequential": "Sequential",
+        "order_random": "Random",
+        "trim_start": "Trim start",
+        "trim_end": "Trim end",
+        "video_track": "Video track",
+        "no_video_tracks": "No video tracks",
+        "clear_track": "Clear video track first",
+        "zoom_beats": "Zoom on beats",
+        "zoom_easing": "Easing",
+        "zoom_dir": "",
+        "edit_btn": "Auto-Edit to Beats",
+        "editing": "Editing...",
+        "detect_first": "Detect beats first (Step 1)",
+        "resolve_not_connected": "Resolve not connected!",
+        # Progress
+        "analyzing_clips": "Analyzing clip {i}/{total}...",
+        "placing_clips": "Placing {count} clips...",
+        "applying_zoom": "Applying zoom on beats...",
+        "applying_effects": "Applying effects {i}/{total}...",
+        "done": "Done! {placed} clips placed on {beats} beats",
+        # Refresh
+        "refresh_btn": "Refresh Connection",
+        # Trial
+        "licensed": "Licensed",
+        "trial_remaining": "Trial: {n} free uses left",
+        "trial_expired": "Trial expired",
+        "activate": "Activate",
+        # License dialog
+        "activation_title": "Pulse Edit \u2014 Activation",
+        "enter_key": "Enter your license key",
+        "activate_btn": "Activate License",
+        "verifying": "Verifying...",
+        "please_enter_key": "Please enter a license key.",
+        "license_activated": "License activated!",
+        # License API
+        "key_not_found": "License key not found.",
+        "key_invalid": "Invalid license key.",
+        "error_generic": "Error: {msg}",
+        "offline_error": "Unable to verify online. Check your connection.",
+        "license_valid": "License valid.",
+        "license_invalid": "License not valid.",
+        "server_error": "Server error: {code}",
+        "validation_error": "Validation error.",
+        "activation_failed": "Activation failed.",
+        # Clip scan
+        "scan_ok": "{count} clips ({fps} fps) — ready",
+        # Cut patterns
+        "cut_pattern": "Cut pattern",
+        "place_subdivisions": "Place subdivision markers (red)",
+        "subdiv_half": "Half (bar/2)",
+        "subdiv_triplet": "Triplet (bar/3)",
+        "subdiv_quarter": "Quarter (bar/4)",
+        "subdiv_sextuplet": "Sextuplet (bar/6)",
+        "subdiv_eighth": "Eighth (bar/8)",
+        "pattern_energy_map": "Energy Map (Auto)",
+        "pattern_every_beat": "Every Beat",
+        "pattern_every_bar": "Every Bar (4/4)",
+        "pattern_beat_upbeat": "Beat + Upbeat",
+        "pattern_half_time": "Half Time",
+        "pattern_fast_to_slow": "Fast \u2192 Slow",
+        "pattern_slow_to_fast": "Slow \u2192 Fast",
+        "pattern_buildup": "Buildup",
+        "pattern_wedding": "Wedding / Slow",
+        "pattern_random_energy_fast": "Random Energy Fast",
+        "pattern_random_energy_slow": "Random Energy Slow",
+        "unique_clips": "Use each clip only once",
+        "add_transitions": "Add transitions between clips",
+        "transition_type": "Transition",
+        "tr_none": "None",
+        "tr_cross_dissolve": "Cross Dissolve",
+        "tr_dip_black": "Dip to Black",
+        "tr_dip_white": "Dip to White",
+        "adding_transitions": "Adding transitions...",
+        # AI Mood
+        "ai_edit_btn": "AI Auto-Edit",
+        "ai_analyzing": "AI analyzing mood...",
+        "ai_mood_detected": "Mood: {mood} ({confidence}%) — {pattern}",
+        "ai_applying": "AI applying {mood} style...",
+        "ai_intensity": "AI Intensity",
+        "ai_intensity_hint": "Calm \u2190 \u2192 Intense",
+        "ai_apply_zoom": "Apply Zoom",
+        "ai_apply_speed": "Apply Speed Ramp",
+        "ai_apply_freeze": "Freeze Frame",
+        # Step 3 — Zoom
+        "step3_title": "Step 3 \u2014 Zoom",
+        "zoom_amount": "Zoom amount",
+        "zoom_freq": "Frequency",
+        "zoom_direction": "Direction",
+        "apply_zoom_btn": "Apply Zoom",
+        "apply_zoom_selected": "Apply to Current Clip",
+        "zoom_done": "Zoom applied to {n} clips",
+        "zoom_applied_selected": "Zoom applied to current clip",
+        "no_clip_selected": "No clip under playhead",
+        "current_clip_hint": "Applies to the clip under the playhead",
+        "zoom_all_section": "All Clips",
+        "zoom_single_section": "Single Clip",
+        "step4_title": "Step 4 \u2014 Clip Zoom",
+        "zoom_duration": "Duration",
+        "zoom_duration_auto": "Auto",
+        "clip_duration": "Clip: {dur}s",
+        "no_clip_under_playhead": "No clip under playhead",
+        "random_zoom_btn": "Randomize Zoom",
+        "remove_zoom_all": "Remove All Zoom",
+        "remove_zoom_selected": "Remove Zoom from Current Clip",
+        "zoom_removed": "Zoom removed from {n} clips",
+        "zoom_removed_selected": "Zoom removed from selected clip",
+        "ai_edit_tab": "AI Edit",
+        "single_clip_tab": "Single Clip",
+        "detect_beats_sub": "Detect Beats",
+        "auto_edit_sub": "Auto-Edit",
+        "zoom_sub": "Zoom",
+        # Speed Ramp
+        "speed_sub": "Speed",
+        "speed_amount": "Speed",
+        "apply_speed_btn": "Apply Speed Ramp",
+        "apply_speed_selected": "Apply to Current Clip",
+        "random_speed_btn": "Randomize Speed",
+        "remove_speed_all": "Remove All Speed Ramps",
+        "remove_speed_selected": "Remove Speed from Current Clip",
+        "speed_done": "Speed ramp applied to {n} clips",
+        "speed_applied_selected": "Speed ramp applied to current clip",
+        "speed_removed": "Speed ramp removed from {n} clips",
+        "speed_removed_selected": "Speed ramp removed from current clip",
+        "applying_speed": "Applying speed ramps...",
+        "speed_hint": "Applies to the clip under the playhead",
+        # Coming Soon
+        "coming_soon_title": "Coming Soon",
+        "coming_soon_badge": "Coming Soon",
+        "speed_coming_soon_desc": "Speed Ramp effects will be available in a future update. Stay tuned!",
+        "transition_coming_soon": "Transitions will be available in a future update.",
+    },
+    "it": {
+        # Main window
+        "app_title": "Pulse Edit",
+        "subtitle": "Montaggio automatico a tempo di musica per DaVinci Resolve",
+        "connecting": "Connessione a Resolve...",
+        "resolve_not_found": "DaVinci Resolve non trovato. Avvialo e clicca Aggiorna.",
+        "no_project": "Nessun progetto aperto in Resolve.",
+        "no_timeline": "Nessuna timeline attiva.",
+        "connected": "Connesso \u2014 {name} ({fps} fps)",
+        "language": "Lingua",
+        # Step 1
+        "step1_title": "Step 1 \u2014 Rileva Beat",
+        "audio_track": "Traccia audio",
+        "no_tracks": "Nessuna traccia trovata",
+        "no_audio_tracks": "Nessuna traccia audio trovata",
+        "sensitivity": "Sensibilit\u00e0",
+        "sensitivity_hint": "Bassa = solo beat forti | Alta = pi\u00f9 beat rilevati",
+        "time_signature": "Tempo",
+        "place_markers": "Posiziona marker sulla timeline",
+        "detect_btn": "Rileva Beat",
+        "detecting": "Rilevamento...",
+        "beats_detected": "BPM: {bpm:.0f} | {count} beat | media {avg:.2f}s",
+        "no_beats": "Nessun beat rilevato!",
+        "audio_not_found": "File audio non trovato!",
+        "placing_markers_progress": "Posizionamento marker... {i}/{total}",
+        # Step 2
+        "step2_title": "Step 2 \u2014 Auto-Edit",
+        "folder": "Cartella Media Pool",
+        "clips_found": "{count} clip video trovati",
+        "no_clips": "Nessun clip video in questa cartella",
+        "clip_order": "Ordine clip",
+        "order_sequential": "Sequenziale",
+        "order_random": "Casuale",
+        "trim_start": "Taglia inizio",
+        "trim_end": "Taglia fine",
+        "video_track": "Traccia video",
+        "no_video_tracks": "Nessuna traccia video",
+        "clear_track": "Svuota traccia video prima",
+        "zoom_beats": "Zoom sui beat",
+        "zoom_easing": "Easing",
+        "zoom_dir": "",
+        "edit_btn": "Auto-Edit a Tempo",
+        "editing": "Montaggio...",
+        "detect_first": "Prima rileva i beat (Step 1)",
+        "resolve_not_connected": "Resolve non connesso!",
+        # Progress
+        "analyzing_clips": "Analisi clip {i}/{total}...",
+        "placing_clips": "Posizionamento {count} clip...",
+        "applying_zoom": "Applicazione zoom sui beat...",
+        "applying_effects": "Applicazione effetti {i}/{total}...",
+        "done": "Fatto! {placed} clip posizionati su {beats} beat",
+        # Refresh
+        "refresh_btn": "Aggiorna Connessione",
+        # Trial
+        "licensed": "Licenza attiva",
+        "trial_remaining": "Prova: {n} utilizzi gratuiti",
+        "trial_expired": "Prova scaduta",
+        "activate": "Attiva",
+        # License dialog
+        "activation_title": "Pulse Edit \u2014 Attivazione",
+        "enter_key": "Inserisci la chiave di licenza",
+        "activate_btn": "Attiva Licenza",
+        "verifying": "Verifica in corso...",
+        "please_enter_key": "Inserisci una chiave di licenza.",
+        "license_activated": "Licenza attivata!",
+        # License API
+        "key_not_found": "Chiave di licenza non trovata.",
+        "key_invalid": "Chiave non valida.",
+        "error_generic": "Errore: {msg}",
+        "offline_error": "Impossibile verificare online. Controlla la connessione.",
+        "license_valid": "Licenza valida.",
+        "license_invalid": "Licenza non valida.",
+        "server_error": "Errore server: {code}",
+        "validation_error": "Errore di validazione.",
+        "activation_failed": "Attivazione fallita.",
+        # Clip scan
+        "scan_ok": "{count} clip ({fps} fps) — pronte",
+        # Cut patterns
+        "cut_pattern": "Pattern di taglio",
+        "place_subdivisions": "Segna suddivisioni battuta (rosso)",
+        "subdiv_half": "Metà (battuta/2)",
+        "subdiv_triplet": "Terzinato (battuta/3)",
+        "subdiv_quarter": "Quartinato (battuta/4)",
+        "subdiv_sextuplet": "Sestinato (battuta/6)",
+        "subdiv_eighth": "Ottavi (battuta/8)",
+        "pattern_energy_map": "Energy Map (Auto)",
+        "pattern_every_beat": "Ogni beat",
+        "pattern_every_bar": "Ogni battuta (4/4)",
+        "pattern_beat_upbeat": "Beat + Upbeat",
+        "pattern_half_time": "Half Time",
+        "pattern_fast_to_slow": "Veloce \u2192 Lento",
+        "pattern_slow_to_fast": "Lento \u2192 Veloce",
+        "pattern_buildup": "Buildup",
+        "pattern_wedding": "Matrimoniale / Lento",
+        "pattern_random_energy_fast": "Random Energy Veloce",
+        "pattern_random_energy_slow": "Random Energy Lento",
+        "unique_clips": "Usa ogni clip una sola volta",
+        "add_transitions": "Aggiungi transizioni tra le clip",
+        "transition_type": "Transizione",
+        "tr_none": "Nessuna",
+        "tr_cross_dissolve": "Cross Dissolve",
+        "tr_dip_black": "Dip to Black",
+        "tr_dip_white": "Dip to White",
+        "adding_transitions": "Aggiunta transizioni...",
+        # AI Mood
+        "ai_edit_btn": "AI Auto-Edit",
+        "ai_analyzing": "AI analisi mood...",
+        "ai_mood_detected": "Mood: {mood} ({confidence}%) \u2014 {pattern}",
+        "ai_applying": "AI applicazione stile {mood}...",
+        "ai_intensity": "Intensit\u00e0 AI",
+        "ai_intensity_hint": "Calmo \u2190 \u2192 Intenso",
+        "ai_apply_zoom": "Applica Zoom",
+        "ai_apply_speed": "Applica Speed Ramp",
+        "ai_apply_freeze": "Freeze Frame",
+        # Step 3 — Zoom
+        "step3_title": "Step 3 \u2014 Zoom",
+        "zoom_amount": "Intensit\u00e0 zoom",
+        "zoom_freq": "Frequenza",
+        "zoom_direction": "Direzione",
+        "apply_zoom_btn": "Applica Zoom",
+        "apply_zoom_selected": "Applica alla Clip Corrente",
+        "zoom_done": "Zoom applicato a {n} clip",
+        "zoom_applied_selected": "Zoom applicato alla clip corrente",
+        "no_clip_selected": "Nessuna clip sotto il playhead",
+        "current_clip_hint": "Agisce sulla clip sotto il playhead",
+        "zoom_all_section": "Tutte le clip",
+        "zoom_single_section": "Clip singola",
+        "step4_title": "Step 4 \u2014 Zoom Clip",
+        "zoom_duration": "Durata",
+        "zoom_duration_auto": "Auto",
+        "clip_duration": "Clip: {dur}s",
+        "no_clip_under_playhead": "Nessuna clip sotto il playhead",
+        "random_zoom_btn": "Zoom Casuale",
+        "remove_zoom_all": "Rimuovi Tutti gli Zoom",
+        "remove_zoom_selected": "Rimuovi Zoom dalla Clip Corrente",
+        "zoom_removed": "Zoom rimosso da {n} clip",
+        "zoom_removed_selected": "Zoom rimosso dalla clip corrente",
+        "ai_edit_tab": "AI Edit",
+        "single_clip_tab": "Clip Singola",
+        "detect_beats_sub": "Rileva Beat",
+        "auto_edit_sub": "Auto-Edit",
+        "zoom_sub": "Zoom",
+        # Speed Ramp
+        "speed_sub": "Speed",
+        "speed_amount": "Velocit\u00e0",
+        "apply_speed_btn": "Applica Speed Ramp",
+        "apply_speed_selected": "Applica alla Clip Corrente",
+        "random_speed_btn": "Speed Casuale",
+        "remove_speed_all": "Rimuovi Tutti gli Speed Ramp",
+        "remove_speed_selected": "Rimuovi Speed dalla Clip Corrente",
+        "speed_done": "Speed ramp applicato a {n} clip",
+        "speed_applied_selected": "Speed ramp applicato alla clip corrente",
+        "speed_removed": "Speed ramp rimosso da {n} clip",
+        "speed_removed_selected": "Speed ramp rimosso dalla clip corrente",
+        "applying_speed": "Applicazione speed ramp...",
+        "speed_hint": "Agisce sulla clip sotto il playhead",
+        # Coming Soon
+        "coming_soon_title": "Prossimamente",
+        "coming_soon_badge": "Prossimamente",
+        "speed_coming_soon_desc": "Gli effetti Speed Ramp saranno disponibili in un futuro aggiornamento!",
+        "transition_coming_soon": "Le transizioni saranno disponibili in un futuro aggiornamento.",
+    },
+}
+
+_current_lang = "en"
+
+
+def init():
+    """Initialize language. Default: English."""
+    global _current_lang
+    _current_lang = "en"
+
+
+def set_language(lang):
+    """Set language manually ('en' or 'it')."""
+    global _current_lang
+    if lang in STRINGS:
+        _current_lang = lang
+
+
+def get_language():
+    """Get current language code."""
+    return _current_lang
+
+
+def t(key, **kwargs):
+    """Get translated string. Falls back to English."""
+    s = STRINGS.get(_current_lang, STRINGS["en"]).get(key)
+    if s is None:
+        s = STRINGS["en"].get(key, key)
+    if kwargs:
+        return s.format(**kwargs)
+    return s
+
+
+def available_languages():
+    """Return list of (code, display_name) tuples."""
+    return [("en", "English"), ("it", "Italiano")]
+
+
+init()

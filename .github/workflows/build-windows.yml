@@ -1,0 +1,96 @@
+name: Build Windows
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install customtkinter librosa scipy soundfile pyinstaller pyarmor numba soxr pillow scikit-learn requests
+
+      - name: Download ffmpeg
+        run: |
+          curl -L -o ffmpeg.zip https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip
+          7z x ffmpeg.zip -offmpeg_extract
+          copy ffmpeg_extract\ffmpeg-master-latest-win64-gpl\bin\ffmpeg.exe resources\ffmpeg.exe
+
+      - name: Obfuscate with PyArmor
+        run: |
+          pyarmor gen --output dist_obf main.py app/
+
+      - name: Detect PyArmor runtime name
+        id: pyarmor_rt
+        shell: python
+        run: |
+          import os, glob
+          runtimes = glob.glob("dist_obf/pyarmor_runtime_*")
+          if runtimes:
+              name = os.path.basename(runtimes[0])
+              print(f"Found runtime: {name}")
+              with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+                  f.write(f"name={name}\n")
+          else:
+              print("ERROR: No pyarmor runtime found")
+              exit(1)
+
+      - name: Build with PyInstaller
+        run: |
+          cd dist_obf
+          pyinstaller --name "PulseEdit" `
+            --windowed `
+            --noconfirm `
+            --icon ..\resources\icon.ico `
+            --collect-all customtkinter `
+            --add-data "${{ steps.pyarmor_rt.outputs.name }};${{ steps.pyarmor_rt.outputs.name }}" `
+            --add-binary "..\resources\ffmpeg.exe;." `
+            --hidden-import librosa `
+            --hidden-import librosa.util `
+            --hidden-import librosa.filters `
+            --hidden-import librosa.feature `
+            --hidden-import librosa.beat `
+            --hidden-import librosa.onset `
+            --hidden-import librosa.core `
+            --hidden-import scipy.signal `
+            --hidden-import scipy.fft `
+            --hidden-import soundfile `
+            --hidden-import numba `
+            --hidden-import soxr `
+            --hidden-import numpy `
+            --hidden-import ${{ steps.pyarmor_rt.outputs.name }} `
+            --hidden-import app `
+            --hidden-import app.i18n `
+            --hidden-import app.core `
+            --hidden-import app.core.resolve_bridge `
+            --hidden-import app.core.beat_detector `
+            --hidden-import app.core.clip_analyzer `
+            --hidden-import app.core.editor `
+            --hidden-import app.core.mood_analyzer `
+            --hidden-import app.gui `
+            --hidden-import app.gui.main_window `
+            --hidden-import app.gui.license_dialog `
+            --hidden-import app.licensing `
+            --hidden-import app.licensing.lemon `
+            --hidden-import app.licensing.storage `
+            main.py
+
+      - name: Create ZIP
+        run: |
+          cd dist_obf\dist
+          7z a -tzip "..\..\PulseEdit-Windows.zip" "PulseEdit"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: PulseEdit-Windows
+          path: PulseEdit-Windows.zip
