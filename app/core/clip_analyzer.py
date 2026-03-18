@@ -8,13 +8,17 @@ import numpy as np
 
 def get_ffmpeg_path():
     """Trova il path di ffmpeg."""
+    import platform
+    is_win = platform.system() == "Windows"
+    exe = "ffmpeg.exe" if is_win else "ffmpeg"
+
     if hasattr(sys, '_MEIPASS'):
-        bundled = os.path.join(sys._MEIPASS, "ffmpeg")
+        bundled = os.path.join(sys._MEIPASS, exe)
         if os.path.exists(bundled):
             return bundled
-    if os.path.exists("/opt/homebrew/bin/ffmpeg"):
+    if not is_win and os.path.exists("/opt/homebrew/bin/ffmpeg"):
         return "/opt/homebrew/bin/ffmpeg"
-    return "ffmpeg"
+    return exe
 
 
 def analyze_clip(file_path, total_frames, fps, trim_start_s=0, trim_end_s=0,

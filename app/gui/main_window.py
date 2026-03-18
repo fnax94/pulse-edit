@@ -1,12 +1,19 @@
 """Pulse Edit main window — tabbed layout: Detect Beats + Auto-Edit."""
 
+import os
 import threading
 import logging
+import tempfile as _tempfile
+import platform as _platform
 import customtkinter as ctk
 
 _log = logging.getLogger("pulseedit")
 _log.setLevel(logging.DEBUG)
-_fh = logging.FileHandler("/tmp/pulseedit_debug.log", mode="w")
+if _platform.system() == "Windows":
+    _log_path = os.path.join(_tempfile.gettempdir(), "pulseedit_debug.log")
+else:
+    _log_path = "/tmp/pulseedit_debug.log"
+_fh = logging.FileHandler(_log_path, mode="w")
 _fh.setFormatter(logging.Formatter("%(asctime)s %(message)s"))
 _log.addHandler(_fh)
 from app.core import resolve_bridge, beat_detector, clip_analyzer, editor, mood_analyzer
