@@ -25,6 +25,13 @@ jobs:
           7z x ffmpeg.zip -offmpeg_extract
           copy ffmpeg_extract\ffmpeg-master-latest-win64-gpl\bin\ffmpeg.exe resources\ffmpeg.exe
 
+      - name: Register PyArmor license
+        env:
+          PYARMOR_LICENSE: ${{ secrets.PYARMOR_LICENSE }}
+        run: |
+          mkdir -p $HOME/.pyarmor
+          echo $env:PYARMOR_LICENSE | python -c "import sys,base64; sys.stdout.buffer.write(base64.b64decode(sys.stdin.read().strip()))" > $HOME/.pyarmor/license.lic
+
       - name: Obfuscate with PyArmor
         run: |
           pyarmor gen --output dist_obf main.py app/
