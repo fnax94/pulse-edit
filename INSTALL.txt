@@ -1,0 +1,101 @@
+============================================
+  Pulse Edit — Installation Guide
+============================================
+
+Pulse Edit is made by AB Tools, a small independent
+developer studio. Because we're indie, our apps are not
+yet signed with Apple/Microsoft certificates — so your
+system may show a security warning on first launch.
+
+The app is 100% safe. Here's how to install it:
+
+
+--- macOS ---
+
+Option A: Run the installer script (easiest)
+  1. Extract the zip
+  2. Double-click "Installa PulseEdit.command"
+  3. Enter your Mac password when asked
+  4. Done — the app opens automatically
+
+Option B: Manual
+  1. Extract the zip
+  2. Right-click on "PulseEdit.app" > Open
+  3. macOS will say "Apple cannot verify this app"
+  4. Click "Open" to confirm
+  5. From now on, you can open it normally
+
+
+--- Windows ---
+
+  1. Extract the zip
+  2. Double-click "PulseEdit.exe"
+  3. Windows SmartScreen may show:
+     "Windows protected your PC"
+  4. Click "More info"
+  5. Click "Run anyway"
+  6. From now on, the warning won't appear again
+
+
+--- Requirements ---
+
+  - DaVinci Resolve Studio (not the free version)
+  - Resolve must be running before launching Pulse Edit
+
+
+--- Support ---
+
+  Email: support@pulseedit.com
+  Web:   https://pulseedit.com
+
+
+============================================
+  Pulse Edit — Guida all'Installazione
+============================================
+
+Pulse Edit e' sviluppato da AB Tools, un piccolo
+studio indipendente. Essendo indie, le nostre app non
+sono ancora firmate con certificati Apple/Microsoft,
+quindi il sistema potrebbe mostrare un avviso di
+sicurezza al primo avvio.
+
+L'app e' sicura al 100%. Ecco come installarla:
+
+
+--- macOS ---
+
+Opzione A: Script di installazione (consigliato)
+  1. Estrai lo zip
+  2. Doppio click su "Installa PulseEdit.command"
+  3. Inserisci la password del Mac quando richiesto
+  4. Fatto — l'app si apre automaticamente
+
+Opzione B: Manuale
+  1. Estrai lo zip
+  2. Click destro su "PulseEdit.app" > Apri
+  3. macOS dira' "Apple non puo' verificare questa app"
+  4. Clicca "Apri" per confermare
+  5. Da ora in poi si apre normalmente
+
+
+--- Windows ---
+
+  1. Estrai lo zip
+  2. Doppio click su "PulseEdit.exe"
+  3. Windows SmartScreen potrebbe mostrare:
+     "Windows ha protetto il PC"
+  4. Clicca "Ulteriori informazioni"
+  5. Clicca "Esegui comunque"
+  6. Da ora in poi l'avviso non apparira' piu'
+
+
+--- Requisiti ---
+
+  - DaVinci Resolve Studio (non la versione gratuita)
+  - Resolve deve essere aperto prima di lanciare Pulse Edit
+
+
+--- Supporto ---
+
+  Email: support@pulseedit.com
+  Web:   https://pulseedit.com

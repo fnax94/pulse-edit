@@ -1,19 +1,26 @@
 #!/bin/bash
-# Build Release — PyInstaller (bundle .app) senza PyArmor
-# Protezione fornita da license-server.abtools.workers.dev (hardware binding)
-
+# Release PulseEdit: PyArmor → PyInstaller → AB Tools
+set -e
 cd "$(dirname "$0")"
-source venv/bin/activate
+VENV="$(pwd)/venv/bin"
+PYARMOR="$VENV/python $VENV/pyarmor-8"
+DEST="$HOME/Desktop/AB Tools"
 
-echo "=== Build app con PyInstaller ==="
-rm -rf build dist
+echo "=== Step 1: Offuscamento PyArmor ==="
+rm -rf /tmp/pyarmor_pe
+$PYARMOR gen --output /tmp/pyarmor_pe main.py app/
+cp -R /tmp/pyarmor_pe/* dist_obf/
 
-pyinstaller --name "PulseEdit" \
+echo ""
+echo "=== Step 2: Build PyInstaller ==="
+cd dist_obf
+$VENV/python -m PyInstaller --name "PulseEdit" \
     --windowed \
     --noconfirm \
-    --icon resources/icon.icns \
+    --icon ../resources/icon.icns \
     --collect-all customtkinter \
-    --add-binary "resources/ffmpeg:." \
+    --add-data "pyarmor_runtime_000000:pyarmor_runtime_000000" \
+    --add-binary "../resources/ffmpeg:." \
     --hidden-import librosa \
     --hidden-import librosa.util \
     --hidden-import librosa.filters \
@@ -27,6 +34,7 @@ pyinstaller --name "PulseEdit" \
     --hidden-import numba \
     --hidden-import soxr \
     --hidden-import numpy \
+    --hidden-import pyarmor_runtime_000000 \
     --hidden-import app \
     --hidden-import app.i18n \
     --hidden-import app.core \
@@ -34,7 +42,7 @@ pyinstaller --name "PulseEdit" \
     --hidden-import app.core.beat_detector \
     --hidden-import app.core.clip_analyzer \
     --hidden-import app.core.editor \
-    --hidden-import app.core.mood_analyzer \
+    --hidden-import app.core.custom_patterns \
     --hidden-import app.gui \
     --hidden-import app.gui.main_window \
     --hidden-import app.gui.license_dialog \
@@ -42,13 +50,19 @@ pyinstaller --name "PulseEdit" \
     --hidden-import app.licensing.lemon \
     --hidden-import app.licensing.storage \
     main.py
+cd ..
 
 echo ""
-echo "=== Copia file installazione ==="
-[ -f "INSTALL.txt" ] && cp "INSTALL.txt" "dist/"
-[ -f "Installa PulseEdit.command" ] && cp "Installa PulseEdit.command" "dist/"
+echo "=== Step 3: Copia file installazione ==="
+cp "INSTALL.txt" "dist_obf/dist/"
+cp "Installa PulseEdit.command" "dist_obf/dist/"
 
 echo ""
-echo "=== Build completato! ==="
-echo "App in: dist/PulseEdit.app"
-echo "Per testarla: open 'dist/PulseEdit.app'"
+echo "=== Step 4: Copia in AB Tools ==="
+mkdir -p "$DEST"
+rm -rf "$DEST/PulseEdit.app"
+cp -R dist_obf/dist/PulseEdit.app "$DEST/"
+
+echo ""
+echo "=== Release completata! ==="
+echo "App in: $DEST/PulseEdit.app"

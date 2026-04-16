@@ -2,6 +2,13 @@ name: Build Windows
 
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "main.py"
+      - "app/**"
+      - "resources/**"
+      - ".github/workflows/build-windows.yml"
 
 jobs:
   build:
@@ -25,31 +32,14 @@ jobs:
           7z x ffmpeg.zip -offmpeg_extract
           copy ffmpeg_extract\ffmpeg-master-latest-win64-gpl\bin\ffmpeg.exe resources\ffmpeg.exe
 
-      - name: Detect PyArmor runtime name
-        id: pyarmor_rt
-        shell: python
+      - name: Build with PyInstaller (no PyArmor)
         run: |
-          import os, glob
-          runtimes = glob.glob("dist_obf_win/pyarmor_runtime_*")
-          if runtimes:
-              name = os.path.basename(runtimes[0])
-              print(f"Found runtime: {name}")
-              with open(os.environ["GITHUB_OUTPUT"], "a") as f:
-                  f.write(f"name={name}\n")
-          else:
-              print("ERROR: No pyarmor runtime found")
-              exit(1)
-
-      - name: Build with PyInstaller
-        run: |
-          cd dist_obf_win
           pyinstaller --name "PulseEdit" `
             --windowed `
             --noconfirm `
-            --icon ..\resources\icon.ico `
+            --icon resources\icon.ico `
             --collect-all customtkinter `
-            --add-data "${{ steps.pyarmor_rt.outputs.name }};${{ steps.pyarmor_rt.outputs.name }}" `
-            --add-binary "..\resources\ffmpeg.exe;." `
+            --add-binary "resources\ffmpeg.exe;." `
             --hidden-import librosa `
             --hidden-import librosa.util `
             --hidden-import librosa.filters `
@@ -63,7 +53,6 @@ jobs:
             --hidden-import numba `
             --hidden-import soxr `
             --hidden-import numpy `
-            --hidden-import ${{ steps.pyarmor_rt.outputs.name }} `
             --hidden-import app `
             --hidden-import app.i18n `
             --hidden-import app.core `
@@ -82,8 +71,8 @@ jobs:
 
       - name: Create ZIP
         run: |
-          cd dist_obf_win\dist
-          7z a -tzip "..\..\PulseEdit-Windows.zip" "PulseEdit"
+          cd dist
+          7z a -tzip "..\PulseEdit-Windows.zip" "PulseEdit"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4

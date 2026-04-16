@@ -2,9 +2,12 @@ venv/
 __pycache__/
 *.pyc
 dist_obf/
-!dist_obf_win/
+dist_obf_win/
 build/
 dist/
 *.egg-info/
 .DS_Store
 *.spec
+.pyarmor/
+pyarmor_runtime_*/
+*.zip
