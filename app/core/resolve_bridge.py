@@ -122,7 +122,13 @@ def _sample_easing(ease_type, num_samples=10):
     return points
 
 import platform as _platform
+import subprocess as _subprocess
+import time as _time
+import logging as _logging
+
+_log = _logging.getLogger("resolve_bridge")
 _IS_WINDOWS = _platform.system() == "Windows"
+_IS_MAC = _platform.system() == "Darwin"
 
 if _IS_WINDOWS:
     _PROGRAMDATA = os.environ.get("PROGRAMDATA", r"C:\ProgramData")
@@ -135,14 +141,39 @@ if _IS_WINDOWS:
         "Blackmagic Design", "DaVinci Resolve", "Libraries", "Fusion"
     )
 else:
-    FUSION_MODULE_PATH = "/Library/Application Support/Blackmagic Design/DaVinci Resolve/Developer/Scripting/Modules"
-    FUSION_LIB_PATH = "/Applications/DaVinci Resolve/DaVinci Resolve.app/Contents/Libraries/Fusion/"
+    _MAC_MODULE_PATHS = [
+        "/Library/Application Support/Blackmagic Design/DaVinci Resolve/Developer/Scripting/Modules",
+        os.path.expanduser("~/Library/Application Support/Blackmagic Design/DaVinci Resolve/Developer/Scripting/Modules"),
+    ]
+    FUSION_MODULE_PATH = next((p for p in _MAC_MODULE_PATHS if os.path.isdir(p)), _MAC_MODULE_PATHS[0])
+    _MAC_LIB_PATHS = [
+        "/Applications/DaVinci Resolve/DaVinci Resolve.app/Contents/Libraries/Fusion/",
+        "/Applications/DaVinci Resolve/DaVinci Resolve.app/Contents/Libraries/Fusion",
+    ]
+    FUSION_LIB_PATH = next((p for p in _MAC_LIB_PATHS if os.path.isdir(p)), _MAC_LIB_PATHS[0])
 
 
-def connect():
-    """Connette a DaVinci Resolve. Ritorna l'oggetto resolve o None."""
+def _is_resolve_running():
+    try:
+        if _IS_WINDOWS:
+            out = _subprocess.check_output(["tasklist", "/FI", "IMAGENAME eq Resolve.exe"], text=True, timeout=5)
+            return "Resolve.exe" in out
+        else:
+            out = _subprocess.check_output(["pgrep", "-x", "Resolve"], text=True, timeout=5)
+            return bool(out.strip())
+    except Exception:
+        return False
+
+
+def connect(retries=3, delay=1.5):
+    """Connette a DaVinci Resolve con retry. Ritorna l'oggetto resolve o None."""
+    if not _is_resolve_running():
+        _log.warning("Resolve process not found in running processes")
+        return None
+
     if FUSION_MODULE_PATH not in sys.path:
         sys.path.insert(0, FUSION_MODULE_PATH)
+    _log.info(f"Module path: {FUSION_MODULE_PATH} (exists: {os.path.isdir(FUSION_MODULE_PATH)})")
 
     if _IS_WINDOWS:
         current_path = os.environ.get("PATH", "")
@@ -158,14 +189,35 @@ def connect():
         if not os.environ.get("RESOLVE_SCRIPT_LIB", "") and os.path.exists(lib_path):
             os.environ["RESOLVE_SCRIPT_LIB"] = lib_path
     else:
-        os.environ["DYLD_LIBRARY_PATH"] = FUSION_LIB_PATH
+        os.environ.setdefault("DYLD_LIBRARY_PATH", FUSION_LIB_PATH)
+        if _IS_MAC:
+            os.environ.setdefault("RESOLVE_SCRIPT_API", "/Library/Application Support/Blackmagic Design/DaVinci Resolve/Developer/Scripting")
+            lib_so = os.path.join(FUSION_LIB_PATH, "libfusionscript.so")
+            lib_dylib = os.path.join(FUSION_LIB_PATH, "fusionscript.so")
+            for lib in [lib_so, lib_dylib]:
+                if os.path.exists(lib):
+                    os.environ.setdefault("RESOLVE_SCRIPT_LIB", lib)
+                    break
 
-    try:
-        import DaVinciResolveScript as dvr
-        resolve = dvr.scriptapp("Resolve")
-        return resolve
-    except Exception:
-        return None
+    for attempt in range(retries):
+        try:
+            import DaVinciResolveScript as dvr
+            resolve = dvr.scriptapp("Resolve")
+            if resolve:
+                _log.info(f"Connected to Resolve (attempt {attempt + 1})")
+                return resolve
+            _log.warning(f"scriptapp returned None (attempt {attempt + 1}/{retries})")
+        except ImportError as e:
+            _log.error(f"Cannot import DaVinciResolveScript: {e}")
+            _log.error(f"sys.path includes: {[p for p in sys.path if 'Blackmagic' in p or 'Resolve' in p]}")
+            return None
+        except Exception as e:
+            _log.warning(f"Connect attempt {attempt + 1}/{retries} failed: {e}")
+        if attempt < retries - 1:
+            _time.sleep(delay)
+
+    _log.error("All connection attempts failed")
+    return None
 
 
 # ─── Timeline offset ───
