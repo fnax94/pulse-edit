@@ -130,27 +130,37 @@ _log = _logging.getLogger("resolve_bridge")
 _IS_WINDOWS = _platform.system() == "Windows"
 _IS_MAC = _platform.system() == "Darwin"
 
+def _find_first_existing(paths):
+    return next((p for p in paths if os.path.isdir(p)), paths[0] if paths else "")
+
 if _IS_WINDOWS:
     _PROGRAMDATA = os.environ.get("PROGRAMDATA", r"C:\ProgramData")
-    FUSION_MODULE_PATH = os.path.join(
-        _PROGRAMDATA, "Blackmagic Design", "DaVinci Resolve", "Support", "Developer",
-        "Scripting", "Modules"
-    )
-    FUSION_LIB_PATH = os.path.join(
-        os.environ.get("PROGRAMFILES", r"C:\Program Files"),
-        "Blackmagic Design", "DaVinci Resolve", "Libraries", "Fusion"
-    )
+    _PROGRAMFILES = os.environ.get("PROGRAMFILES", r"C:\Program Files")
+    _WIN_MODULE_PATHS = [
+        os.path.join(_PROGRAMDATA, "Blackmagic Design", "DaVinci Resolve", "Support", "Developer", "Scripting", "Modules"),
+        os.path.join(os.environ.get("APPDATA", ""), "Blackmagic Design", "DaVinci Resolve", "Support", "Developer", "Scripting", "Modules"),
+    ]
+    _WIN_LIB_PATHS = [
+        os.path.join(_PROGRAMFILES, "Blackmagic Design", "DaVinci Resolve", "Libraries", "Fusion"),
+        os.path.join(_PROGRAMFILES, "Blackmagic Design", "DaVinci Resolve", "Fusion"),
+        r"C:\Program Files\Blackmagic Design\DaVinci Resolve\Libraries\Fusion",
+    ]
+    FUSION_MODULE_PATH = _find_first_existing(_WIN_MODULE_PATHS)
+    FUSION_LIB_PATH = _find_first_existing(_WIN_LIB_PATHS)
 else:
     _MAC_MODULE_PATHS = [
         "/Library/Application Support/Blackmagic Design/DaVinci Resolve/Developer/Scripting/Modules",
         os.path.expanduser("~/Library/Application Support/Blackmagic Design/DaVinci Resolve/Developer/Scripting/Modules"),
+        "/opt/resolve/Developer/Scripting/Modules",
     ]
-    FUSION_MODULE_PATH = next((p for p in _MAC_MODULE_PATHS if os.path.isdir(p)), _MAC_MODULE_PATHS[0])
     _MAC_LIB_PATHS = [
-        "/Applications/DaVinci Resolve/DaVinci Resolve.app/Contents/Libraries/Fusion/",
         "/Applications/DaVinci Resolve/DaVinci Resolve.app/Contents/Libraries/Fusion",
+        "/Applications/DaVinci Resolve/DaVinci Resolve.app/Contents/Libraries/Fusion/",
+        os.path.expanduser("~/Applications/DaVinci Resolve/DaVinci Resolve.app/Contents/Libraries/Fusion"),
+        "/opt/resolve/libs/Fusion",
     ]
-    FUSION_LIB_PATH = next((p for p in _MAC_LIB_PATHS if os.path.isdir(p)), _MAC_LIB_PATHS[0])
+    FUSION_MODULE_PATH = _find_first_existing(_MAC_MODULE_PATHS)
+    FUSION_LIB_PATH = _find_first_existing(_MAC_LIB_PATHS)
 
 
 def _is_resolve_running():
@@ -171,33 +181,57 @@ def connect(retries=3, delay=1.5):
         _log.warning("Resolve process not found in running processes")
         return None
 
+    # Add all known module paths to sys.path
+    if _IS_WINDOWS:
+        all_module_paths = _WIN_MODULE_PATHS
+    else:
+        all_module_paths = _MAC_MODULE_PATHS
+
+    for mp in all_module_paths:
+        if os.path.isdir(mp) and mp not in sys.path:
+            sys.path.insert(0, mp)
+            _log.info(f"Added module path: {mp}")
+
     if FUSION_MODULE_PATH not in sys.path:
         sys.path.insert(0, FUSION_MODULE_PATH)
-    _log.info(f"Module path: {FUSION_MODULE_PATH} (exists: {os.path.isdir(FUSION_MODULE_PATH)})")
+    _log.info(f"Primary module path: {FUSION_MODULE_PATH} (exists: {os.path.isdir(FUSION_MODULE_PATH)})")
 
     if _IS_WINDOWS:
-        current_path = os.environ.get("PATH", "")
-        if FUSION_LIB_PATH not in current_path:
-            os.environ["PATH"] = FUSION_LIB_PATH + os.pathsep + current_path
-        if hasattr(os, "add_dll_directory") and os.path.isdir(FUSION_LIB_PATH):
-            os.add_dll_directory(FUSION_LIB_PATH)
+        for lp in _WIN_LIB_PATHS:
+            if os.path.isdir(lp):
+                current_path = os.environ.get("PATH", "")
+                if lp not in current_path:
+                    os.environ["PATH"] = lp + os.pathsep + current_path
+                if hasattr(os, "add_dll_directory"):
+                    os.add_dll_directory(lp)
         if not os.environ.get("RESOLVE_SCRIPT_API", ""):
-            os.environ["RESOLVE_SCRIPT_API"] = os.path.join(
-                _PROGRAMDATA, "Blackmagic Design", "DaVinci Resolve", "Support", "Developer", "Scripting"
-            )
-        lib_path = os.path.join(FUSION_LIB_PATH, "fusionscript.dll")
-        if not os.environ.get("RESOLVE_SCRIPT_LIB", "") and os.path.exists(lib_path):
-            os.environ["RESOLVE_SCRIPT_LIB"] = lib_path
+            for mp in _WIN_MODULE_PATHS:
+                script_api = os.path.dirname(mp)
+                if os.path.isdir(script_api):
+                    os.environ["RESOLVE_SCRIPT_API"] = script_api
+                    break
+        if not os.environ.get("RESOLVE_SCRIPT_LIB", ""):
+            for lp in _WIN_LIB_PATHS:
+                dll = os.path.join(lp, "fusionscript.dll")
+                if os.path.exists(dll):
+                    os.environ["RESOLVE_SCRIPT_LIB"] = dll
+                    break
     else:
         os.environ.setdefault("DYLD_LIBRARY_PATH", FUSION_LIB_PATH)
         if _IS_MAC:
-            os.environ.setdefault("RESOLVE_SCRIPT_API", "/Library/Application Support/Blackmagic Design/DaVinci Resolve/Developer/Scripting")
-            lib_so = os.path.join(FUSION_LIB_PATH, "libfusionscript.so")
-            lib_dylib = os.path.join(FUSION_LIB_PATH, "fusionscript.so")
-            for lib in [lib_so, lib_dylib]:
-                if os.path.exists(lib):
-                    os.environ.setdefault("RESOLVE_SCRIPT_LIB", lib)
+            for mp in _MAC_MODULE_PATHS:
+                script_api = os.path.dirname(mp)
+                if os.path.isdir(script_api):
+                    os.environ.setdefault("RESOLVE_SCRIPT_API", script_api)
                     break
+            if not os.environ.get("RESOLVE_SCRIPT_LIB", ""):
+                for lp in _MAC_LIB_PATHS:
+                    for lib_name in ["libfusionscript.so", "fusionscript.so"]:
+                        lib = os.path.join(lp, lib_name)
+                        if os.path.exists(lib):
+                            os.environ["RESOLVE_SCRIPT_LIB"] = lib
+                            _log.info(f"Found script lib: {lib}")
+                            break
 
     for attempt in range(retries):
         try:
@@ -209,7 +243,7 @@ def connect(retries=3, delay=1.5):
             _log.warning(f"scriptapp returned None (attempt {attempt + 1}/{retries})")
         except ImportError as e:
             _log.error(f"Cannot import DaVinciResolveScript: {e}")
-            _log.error(f"sys.path includes: {[p for p in sys.path if 'Blackmagic' in p or 'Resolve' in p]}")
+            _log.error(f"Searched paths: {[p for p in sys.path if 'Blackmagic' in p or 'Resolve' in p or 'resolve' in p]}")
             return None
         except Exception as e:
             _log.warning(f"Connect attempt {attempt + 1}/{retries} failed: {e}")
