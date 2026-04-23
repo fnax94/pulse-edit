@@ -130,6 +130,28 @@ _log = _logging.getLogger("resolve_bridge")
 _IS_WINDOWS = _platform.system() == "Windows"
 _IS_MAC = _platform.system() == "Darwin"
 
+def _config_path():
+    if _IS_WINDOWS:
+        return os.path.join(os.environ.get("APPDATA", ""), "PulseEdit", "resolve_config.json")
+    return os.path.expanduser("~/Library/Application Support/PulseEdit/resolve_config.json")
+
+def load_custom_resolve_path():
+    try:
+        import json
+        with open(_config_path(), "r") as f:
+            data = json.load(f)
+        return data.get("resolve_path", "")
+    except Exception:
+        return ""
+
+def save_custom_resolve_path(path):
+    import json
+    cfg = _config_path()
+    os.makedirs(os.path.dirname(cfg), exist_ok=True)
+    with open(cfg, "w") as f:
+        json.dump({"resolve_path": path}, f)
+    _log.info(f"Saved custom Resolve path: {path}")
+
 def _find_first_existing(paths):
     return next((p for p in paths if os.path.isdir(p)), paths[0] if paths else "")
 
@@ -139,6 +161,16 @@ def _discover_resolve_paths_windows():
     module_paths = []
     lib_paths = []
     resolve_root = None
+
+    # 0. User-configured custom path (highest priority)
+    custom = load_custom_resolve_path()
+    if custom and os.path.isdir(custom):
+        _log.info(f"Using custom Resolve path: {custom}")
+        resolve_root = custom
+        for sub in ["Developer/Scripting/Modules", "Support/Developer/Scripting/Modules", "Scripting/Modules"]:
+            module_paths.append(os.path.join(custom, sub.replace("/", os.sep)))
+        for sub in ["Libraries/Fusion", "Fusion", ""]:
+            lib_paths.append(os.path.join(custom, sub.replace("/", os.sep)) if sub else custom)
 
     # 1. Try Windows Registry
     try:
@@ -281,16 +313,24 @@ def _discover_resolve_paths_windows():
 
 def _discover_resolve_paths_mac():
     """Auto-discover DaVinci Resolve paths on macOS via known locations + mdfind."""
-    module_paths = [
+    module_paths = []
+    lib_paths = []
+    custom = load_custom_resolve_path()
+    if custom and os.path.isdir(custom):
+        _log.info(f"Using custom Resolve path: {custom}")
+        module_paths.append(os.path.join(custom, "Developer", "Scripting", "Modules"))
+        lib_paths.append(os.path.join(custom, "Libraries", "Fusion"))
+        lib_paths.append(custom)
+    module_paths.extend([
         "/Library/Application Support/Blackmagic Design/DaVinci Resolve/Developer/Scripting/Modules",
         os.path.expanduser("~/Library/Application Support/Blackmagic Design/DaVinci Resolve/Developer/Scripting/Modules"),
         "/opt/resolve/Developer/Scripting/Modules",
-    ]
-    lib_paths = [
+    ])
+    lib_paths.extend([
         "/Applications/DaVinci Resolve/DaVinci Resolve.app/Contents/Libraries/Fusion",
         os.path.expanduser("~/Applications/DaVinci Resolve/DaVinci Resolve.app/Contents/Libraries/Fusion"),
         "/opt/resolve/libs/Fusion",
-    ]
+    ])
     # Try mdfind for non-standard installs
     try:
         out = _subprocess.check_output(

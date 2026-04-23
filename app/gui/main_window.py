@@ -479,18 +479,56 @@ class MainWindow(ctk.CTk):
             self._on_folder_changed(names[0])
 
     def _show_diagnostics(self):
-        import tkinter.messagebox as mb
+        import tkinter as tk
+        diag = tk.Toplevel(self)
+        diag.title("Pulse Edit — Connection Diagnostics")
+        diag.geometry("620x520")
+        diag.resizable(True, True)
+
         info = resolve_bridge.diagnose()
-        log_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "pulseedit.log")
-        if not os.path.exists(log_path):
-            import platform
-            if platform.system() == "Windows":
-                log_path = os.path.join(os.environ.get("APPDATA", ""), "PulseEdit", "pulseedit.log")
-            else:
-                log_path = os.path.expanduser("~/Library/Logs/PulseEdit/pulseedit.log")
-        info += f"\n\nLog file: {log_path}"
-        info += "\n\nIf Resolve is running but not detected, try:\n1. Close and reopen DaVinci Resolve\n2. Make sure a project and timeline are open\n3. Run Pulse Edit as Administrator (Windows)"
-        mb.showinfo("Pulse Edit — Connection Diagnostics", info)
+        custom = resolve_bridge.load_custom_resolve_path()
+
+        tips = []
+        if "Resolve running: False" in info:
+            tips.append("• Resolve not detected — close and reopen DaVinci Resolve, then click Refresh")
+        if "RESOLVE_SCRIPT_LIB = (not set)" in info:
+            tips.append("• fusionscript.dll/so not found — use Browse below to set your Resolve install folder")
+        if "(DaVinciResolveScript.py found)" not in info:
+            tips.append("• DaVinciResolveScript.py not found — you may have DaVinci Resolve Free (scripting requires Studio)")
+        if not tips:
+            tips.append("• Everything looks good! Click Refresh to try connecting.")
+
+        text = tk.Text(diag, wrap="word", font=("Consolas" if os.name == "nt" else "Menlo", 10))
+        text.pack(fill="both", expand=True, padx=10, pady=(10, 5))
+        text.insert("1.0", info)
+        text.insert("end", "\n\n--- Troubleshooting ---\n")
+        for tip in tips:
+            text.insert("end", tip + "\n")
+        if custom:
+            text.insert("end", f"\nCustom path saved: {custom}\n")
+        text.configure(state="disabled")
+
+        btn_frame = tk.Frame(diag)
+        btn_frame.pack(fill="x", padx=10, pady=(5, 10))
+
+        def browse_resolve():
+            from tkinter import filedialog
+            folder = filedialog.askdirectory(title="Select DaVinci Resolve installation folder")
+            if folder:
+                resolve_bridge.save_custom_resolve_path(folder)
+                import tkinter.messagebox as mb
+                mb.showinfo("Path saved", f"Resolve path set to:\n{folder}\n\nClose and reopen Pulse Edit for it to take effect.")
+                diag.destroy()
+
+        def copy_info():
+            self.clipboard_clear()
+            self.clipboard_append(info)
+            import tkinter.messagebox as mb
+            mb.showinfo("Copied", "Diagnostics copied to clipboard")
+
+        tk.Button(btn_frame, text="Browse Resolve folder...", command=browse_resolve).pack(side="left", padx=(0, 8))
+        tk.Button(btn_frame, text="Copy to clipboard", command=copy_info).pack(side="left", padx=(0, 8))
+        tk.Button(btn_frame, text="Close", command=diag.destroy).pack(side="right")
 
     # ─── Event handlers ───
 
