@@ -133,37 +133,146 @@ _IS_MAC = _platform.system() == "Darwin"
 def _find_first_existing(paths):
     return next((p for p in paths if os.path.isdir(p)), paths[0] if paths else "")
 
-if _IS_WINDOWS:
-    _PROGRAMDATA = os.environ.get("PROGRAMDATA", r"C:\ProgramData")
-    _PROGRAMFILES = os.environ.get("PROGRAMFILES", r"C:\Program Files")
-    _APPDATA = os.environ.get("APPDATA", "")
-    _WIN_MODULE_PATHS = [
-        os.path.join(_PROGRAMDATA, "Blackmagic Design", "DaVinci Resolve", "Support", "Developer", "Scripting", "Modules"),
-        os.path.join(_APPDATA, "Blackmagic Design", "DaVinci Resolve", "Support", "Developer", "Scripting", "Modules"),
-        os.path.join(_PROGRAMFILES, "Blackmagic Design", "DaVinci Resolve", "Developer", "Scripting", "Modules"),
-        os.path.join(_PROGRAMFILES, "Blackmagic Design", "DaVinci Resolve", "Scripting", "Modules"),
-        os.path.join(os.environ.get("PROGRAMFILES(X86)", r"C:\Program Files (x86)"), "Blackmagic Design", "DaVinci Resolve", "Support", "Developer", "Scripting", "Modules"),
-    ]
-    _WIN_LIB_PATHS = [
-        os.path.join(_PROGRAMFILES, "Blackmagic Design", "DaVinci Resolve", "Libraries", "Fusion"),
-        os.path.join(_PROGRAMFILES, "Blackmagic Design", "DaVinci Resolve", "Fusion"),
-        os.path.join(_PROGRAMFILES, "Blackmagic Design", "DaVinci Resolve"),
-        r"C:\Program Files\Blackmagic Design\DaVinci Resolve\Libraries\Fusion",
-    ]
-    FUSION_MODULE_PATH = _find_first_existing(_WIN_MODULE_PATHS)
-    FUSION_LIB_PATH = _find_first_existing(_WIN_LIB_PATHS)
-else:
-    _MAC_MODULE_PATHS = [
+
+def _discover_resolve_paths_windows():
+    """Auto-discover DaVinci Resolve install path on Windows via registry + filesystem scan."""
+    module_paths = []
+    lib_paths = []
+    resolve_root = None
+
+    # 1. Try Windows Registry
+    try:
+        import winreg
+        for hive in [winreg.HKEY_LOCAL_MACHINE, winreg.HKEY_CURRENT_USER]:
+            for key_path in [
+                r"SOFTWARE\Blackmagic Design\DaVinci Resolve",
+                r"SOFTWARE\WOW6432Node\Blackmagic Design\DaVinci Resolve",
+            ]:
+                try:
+                    with winreg.OpenKey(hive, key_path) as key:
+                        for val_name in ["InstallPath", "InstallDir", ""]:
+                            try:
+                                val, _ = winreg.QueryValueEx(key, val_name)
+                                if val and os.path.isdir(val):
+                                    resolve_root = val
+                                    break
+                            except (FileNotFoundError, OSError):
+                                pass
+                    if resolve_root:
+                        break
+                except (FileNotFoundError, OSError):
+                    pass
+            if resolve_root:
+                break
+    except ImportError:
+        pass
+
+    # 2. If registry found a root, derive paths from it
+    if resolve_root:
+        _log.info(f"Registry found Resolve at: {resolve_root}")
+        module_paths.append(os.path.join(resolve_root, "Developer", "Scripting", "Modules"))
+        module_paths.append(os.path.join(resolve_root, "Support", "Developer", "Scripting", "Modules"))
+        lib_paths.append(os.path.join(resolve_root, "Libraries", "Fusion"))
+        lib_paths.append(os.path.join(resolve_root, "Fusion"))
+        lib_paths.append(resolve_root)
+
+    # 3. Hardcoded known paths
+    _pd = os.environ.get("PROGRAMDATA", r"C:\ProgramData")
+    _pf = os.environ.get("PROGRAMFILES", r"C:\Program Files")
+    _ad = os.environ.get("APPDATA", "")
+    _pf86 = os.environ.get("PROGRAMFILES(X86)", r"C:\Program Files (x86)")
+    module_paths.extend([
+        os.path.join(_pd, "Blackmagic Design", "DaVinci Resolve", "Support", "Developer", "Scripting", "Modules"),
+        os.path.join(_ad, "Blackmagic Design", "DaVinci Resolve", "Support", "Developer", "Scripting", "Modules"),
+        os.path.join(_pf, "Blackmagic Design", "DaVinci Resolve", "Developer", "Scripting", "Modules"),
+        os.path.join(_pf, "Blackmagic Design", "DaVinci Resolve", "Scripting", "Modules"),
+        os.path.join(_pf86, "Blackmagic Design", "DaVinci Resolve", "Support", "Developer", "Scripting", "Modules"),
+    ])
+    lib_paths.extend([
+        os.path.join(_pf, "Blackmagic Design", "DaVinci Resolve", "Libraries", "Fusion"),
+        os.path.join(_pf, "Blackmagic Design", "DaVinci Resolve", "Fusion"),
+        os.path.join(_pf, "Blackmagic Design", "DaVinci Resolve"),
+    ])
+
+    # 4. Filesystem scan: look for DaVinciResolveScript.py and fusionscript.dll
+    scan_roots = set()
+    if resolve_root:
+        scan_roots.add(resolve_root)
+    for base in [_pf, _pf86, _pd]:
+        bm = os.path.join(base, "Blackmagic Design")
+        if os.path.isdir(bm):
+            scan_roots.add(bm)
+    for root_dir in scan_roots:
+        try:
+            for dirpath, dirnames, filenames in os.walk(root_dir):
+                if "DaVinciResolveScript.py" in filenames:
+                    if dirpath not in module_paths:
+                        module_paths.insert(0, dirpath)
+                        _log.info(f"Filesystem scan found module: {dirpath}")
+                if "fusionscript.dll" in filenames:
+                    if dirpath not in lib_paths:
+                        lib_paths.insert(0, dirpath)
+                        _log.info(f"Filesystem scan found lib: {dirpath}")
+                depth = dirpath.replace(root_dir, "").count(os.sep)
+                if depth > 5:
+                    dirnames.clear()
+        except (PermissionError, OSError):
+            pass
+
+    # 5. Env var override
+    env_api = os.environ.get("RESOLVE_SCRIPT_API", "")
+    if env_api:
+        mod = os.path.join(env_api, "Modules")
+        if os.path.isdir(mod) and mod not in module_paths:
+            module_paths.insert(0, mod)
+    env_lib = os.environ.get("RESOLVE_SCRIPT_LIB", "")
+    if env_lib and os.path.isdir(os.path.dirname(env_lib)):
+        d = os.path.dirname(env_lib)
+        if d not in lib_paths:
+            lib_paths.insert(0, d)
+
+    # Deduplicate preserving order
+    seen_m, seen_l = set(), set()
+    module_paths = [p for p in module_paths if not (p in seen_m or seen_m.add(p))]
+    lib_paths = [p for p in lib_paths if not (p in seen_l or seen_l.add(p))]
+
+    return module_paths, lib_paths
+
+
+def _discover_resolve_paths_mac():
+    """Auto-discover DaVinci Resolve paths on macOS via known locations + mdfind."""
+    module_paths = [
         "/Library/Application Support/Blackmagic Design/DaVinci Resolve/Developer/Scripting/Modules",
         os.path.expanduser("~/Library/Application Support/Blackmagic Design/DaVinci Resolve/Developer/Scripting/Modules"),
         "/opt/resolve/Developer/Scripting/Modules",
     ]
-    _MAC_LIB_PATHS = [
+    lib_paths = [
         "/Applications/DaVinci Resolve/DaVinci Resolve.app/Contents/Libraries/Fusion",
-        "/Applications/DaVinci Resolve/DaVinci Resolve.app/Contents/Libraries/Fusion/",
         os.path.expanduser("~/Applications/DaVinci Resolve/DaVinci Resolve.app/Contents/Libraries/Fusion"),
         "/opt/resolve/libs/Fusion",
     ]
+    # Try mdfind for non-standard installs
+    try:
+        out = _subprocess.check_output(
+            ["mdfind", "kMDItemFSName == 'DaVinciResolveScript.py'"],
+            text=True, timeout=5
+        ).strip()
+        for line in out.splitlines():
+            d = os.path.dirname(line)
+            if d and d not in module_paths:
+                module_paths.insert(0, d)
+                _log.info(f"mdfind found module: {d}")
+    except Exception:
+        pass
+    return module_paths, lib_paths
+
+
+if _IS_WINDOWS:
+    _WIN_MODULE_PATHS, _WIN_LIB_PATHS = _discover_resolve_paths_windows()
+    FUSION_MODULE_PATH = _find_first_existing(_WIN_MODULE_PATHS)
+    FUSION_LIB_PATH = _find_first_existing(_WIN_LIB_PATHS)
+else:
+    _MAC_MODULE_PATHS, _MAC_LIB_PATHS = _discover_resolve_paths_mac()
     FUSION_MODULE_PATH = _find_first_existing(_MAC_MODULE_PATHS)
     FUSION_LIB_PATH = _find_first_existing(_MAC_LIB_PATHS)
 
