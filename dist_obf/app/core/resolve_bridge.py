@@ -176,25 +176,35 @@ def _discover_resolve_paths_windows():
         lib_paths.append(os.path.join(resolve_root, "Fusion"))
         lib_paths.append(resolve_root)
 
-    # 3. Hardcoded known paths
+    # 3. Hardcoded known paths + all drives
     _pd = os.environ.get("PROGRAMDATA", r"C:\ProgramData")
     _pf = os.environ.get("PROGRAMFILES", r"C:\Program Files")
     _ad = os.environ.get("APPDATA", "")
     _pf86 = os.environ.get("PROGRAMFILES(X86)", r"C:\Program Files (x86)")
+    base_dirs = [_pf, _pf86]
+    try:
+        import string
+        for letter in string.ascii_uppercase:
+            for pf in ["Program Files", "Program Files (x86)"]:
+                d = f"{letter}:\\{pf}"
+                if os.path.isdir(d) and d not in base_dirs:
+                    base_dirs.append(d)
+    except Exception:
+        pass
     module_paths.extend([
         os.path.join(_pd, "Blackmagic Design", "DaVinci Resolve", "Support", "Developer", "Scripting", "Modules"),
         os.path.join(_ad, "Blackmagic Design", "DaVinci Resolve", "Support", "Developer", "Scripting", "Modules"),
-        os.path.join(_pf, "Blackmagic Design", "DaVinci Resolve", "Developer", "Scripting", "Modules"),
-        os.path.join(_pf, "Blackmagic Design", "DaVinci Resolve", "Scripting", "Modules"),
-        os.path.join(_pf86, "Blackmagic Design", "DaVinci Resolve", "Support", "Developer", "Scripting", "Modules"),
     ])
-    lib_paths.extend([
-        os.path.join(_pf, "Blackmagic Design", "DaVinci Resolve", "Libraries", "Fusion"),
-        os.path.join(_pf, "Blackmagic Design", "DaVinci Resolve", "Fusion"),
-        os.path.join(_pf, "Blackmagic Design", "DaVinci Resolve"),
-    ])
+    for bd in base_dirs:
+        module_paths.append(os.path.join(bd, "Blackmagic Design", "DaVinci Resolve", "Developer", "Scripting", "Modules"))
+        module_paths.append(os.path.join(bd, "Blackmagic Design", "DaVinci Resolve", "Support", "Developer", "Scripting", "Modules"))
+        module_paths.append(os.path.join(bd, "Blackmagic Design", "DaVinci Resolve", "Scripting", "Modules"))
+        lib_paths.append(os.path.join(bd, "Blackmagic Design", "DaVinci Resolve", "Libraries", "Fusion"))
+        lib_paths.append(os.path.join(bd, "Blackmagic Design", "DaVinci Resolve", "Fusion"))
+        lib_paths.append(os.path.join(bd, "Blackmagic Design", "DaVinci Resolve"))
 
     # 4. Filesystem scan: look for DaVinciResolveScript.py and fusionscript.dll
+    #    Scan ALL drives (D:, E:, etc.) not just C:
     scan_roots = set()
     if resolve_root:
         scan_roots.add(resolve_root)
@@ -202,6 +212,25 @@ def _discover_resolve_paths_windows():
         bm = os.path.join(base, "Blackmagic Design")
         if os.path.isdir(bm):
             scan_roots.add(bm)
+    try:
+        import string
+        for letter in string.ascii_uppercase:
+            drive = f"{letter}:\\"
+            if not os.path.exists(drive):
+                continue
+            for subfolder in ["Program Files", "Program Files (x86)", "Blackmagic Design"]:
+                bm = os.path.join(drive, subfolder, "Blackmagic Design")
+                if os.path.isdir(bm):
+                    scan_roots.add(bm)
+            bm_root = os.path.join(drive, "Blackmagic Design")
+            if os.path.isdir(bm_root):
+                scan_roots.add(bm_root)
+            for pf in ["Program Files", "Program Files (x86)"]:
+                resolve_dir = os.path.join(drive, pf, "Blackmagic Design", "DaVinci Resolve")
+                if os.path.isdir(resolve_dir):
+                    scan_roots.add(resolve_dir)
+    except Exception:
+        pass
     for root_dir in scan_roots:
         try:
             for dirpath, dirnames, filenames in os.walk(root_dir):
