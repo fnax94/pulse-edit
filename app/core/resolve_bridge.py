@@ -229,6 +229,15 @@ def _discover_resolve_paths_windows():
                 resolve_dir = os.path.join(drive, pf, "Blackmagic Design", "DaVinci Resolve")
                 if os.path.isdir(resolve_dir):
                     scan_roots.add(resolve_dir)
+            # Scan root-level folders that might contain Resolve (e.g. D:\DaVinci)
+            try:
+                for entry in os.listdir(drive):
+                    if "davinci" in entry.lower() or "resolve" in entry.lower() or "blackmagic" in entry.lower():
+                        candidate = os.path.join(drive, entry)
+                        if os.path.isdir(candidate):
+                            scan_roots.add(candidate)
+            except (PermissionError, OSError):
+                pass
     except Exception:
         pass
     for root_dir in scan_roots:
