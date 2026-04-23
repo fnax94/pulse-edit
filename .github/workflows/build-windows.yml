@@ -78,4 +78,4 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release upload pulse-edit-v1.0 PulseEdit-Windows.zip --clobber
+          gh release upload pulse-edit-v1.2 PulseEdit-Windows.zip --clobber
