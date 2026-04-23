@@ -266,6 +266,19 @@ def _discover_resolve_paths_mac():
                 _log.info(f"mdfind found module: {d}")
     except Exception:
         pass
+    for lib_name in ["libfusionscript.so", "fusionscript.so"]:
+        try:
+            out = _subprocess.check_output(
+                ["mdfind", f"kMDItemFSName == '{lib_name}'"],
+                text=True, timeout=5
+            ).strip()
+            for line in out.splitlines():
+                d = os.path.dirname(line)
+                if d and d not in lib_paths:
+                    lib_paths.insert(0, d)
+                    _log.info(f"mdfind found lib ({lib_name}): {d}")
+        except Exception:
+            pass
     return module_paths, lib_paths
 
 
@@ -286,7 +299,7 @@ def _is_resolve_running():
             out_lower = out.lower()
             return "resolve" in out_lower
         else:
-            out = _subprocess.check_output(["pgrep", "-i", "resolve"], text=True, timeout=5)
+            out = _subprocess.check_output(["pgrep", "-if", "[Rr]esolve"], text=True, timeout=5)
             return bool(out.strip())
     except Exception:
         return False
