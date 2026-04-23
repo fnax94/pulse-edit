@@ -209,10 +209,12 @@ def _discover_resolve_paths_windows():
                     if dirpath not in module_paths:
                         module_paths.insert(0, dirpath)
                         _log.info(f"Filesystem scan found module: {dirpath}")
-                if "fusionscript.dll" in filenames:
-                    if dirpath not in lib_paths:
-                        lib_paths.insert(0, dirpath)
-                        _log.info(f"Filesystem scan found lib: {dirpath}")
+                for dll_name in ["fusionscript.dll", "FusionScript.dll", "fusionscript64.dll"]:
+                    if dll_name in filenames:
+                        if dirpath not in lib_paths:
+                            lib_paths.insert(0, dirpath)
+                            _log.info(f"Filesystem scan found lib ({dll_name}): {dirpath}")
+                        break
                 depth = dirpath.replace(root_dir, "").count(os.sep)
                 if depth > 5:
                     dirnames.clear()
@@ -280,10 +282,11 @@ else:
 def _is_resolve_running():
     try:
         if _IS_WINDOWS:
-            out = _subprocess.check_output(["tasklist", "/FI", "IMAGENAME eq Resolve.exe"], text=True, timeout=5)
-            return "Resolve.exe" in out
+            out = _subprocess.check_output(["tasklist"], text=True, timeout=5, creationflags=0x08000000)
+            out_lower = out.lower()
+            return "resolve" in out_lower
         else:
-            out = _subprocess.check_output(["pgrep", "-x", "Resolve"], text=True, timeout=5)
+            out = _subprocess.check_output(["pgrep", "-i", "resolve"], text=True, timeout=5)
             return bool(out.strip())
     except Exception:
         return False
@@ -321,9 +324,7 @@ def diagnose():
 def connect(retries=3, delay=1.5):
     """Connette a DaVinci Resolve con retry. Ritorna l'oggetto resolve o None."""
     if not _is_resolve_running():
-        _log.warning("Resolve process not found in running processes")
-        _log.info(diagnose())
-        return None
+        _log.warning("Resolve process not detected — trying to connect anyway")
 
     # Add all known module paths to sys.path
     if _IS_WINDOWS:
