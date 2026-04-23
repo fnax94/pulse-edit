@@ -74,8 +74,8 @@ jobs:
           cd dist
           7z a -tzip "..\PulseEdit-Windows.zip" "PulseEdit"
 
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: PulseEdit-Windows
-          path: PulseEdit-Windows.zip
+      - name: Upload to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload pulse-edit-v1.0 PulseEdit-Windows.zip --clobber
