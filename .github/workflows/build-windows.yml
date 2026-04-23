@@ -10,6 +10,9 @@ on:
       - "resources/**"
       - ".github/workflows/build-windows.yml"
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: windows-latest
