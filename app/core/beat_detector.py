@@ -4,19 +4,21 @@ import subprocess
 import tempfile
 import os
 import sys
+import platform
+
+_IS_WINDOWS = platform.system() == "Windows"
+_SUBPROCESS_KWARGS = {"creationflags": 0x08000000} if _IS_WINDOWS else {}
 
 
 def get_ffmpeg_path():
     """Trova il path di ffmpeg (bundled o sistema)."""
-    import platform
-    is_win = platform.system() == "Windows"
-    exe = "ffmpeg.exe" if is_win else "ffmpeg"
+    exe = "ffmpeg.exe" if _IS_WINDOWS else "ffmpeg"
 
     if hasattr(sys, '_MEIPASS'):
         bundled = os.path.join(sys._MEIPASS, exe)
         if os.path.exists(bundled):
             return bundled
-    if not is_win and os.path.exists("/opt/homebrew/bin/ffmpeg"):
+    if not _IS_WINDOWS and os.path.exists("/opt/homebrew/bin/ffmpeg"):
         return "/opt/homebrew/bin/ffmpeg"
     return exe
 
@@ -37,7 +39,7 @@ def extract_audio(file_path):
     try:
         result = subprocess.run(
             cmd, capture_output=True, encoding="utf-8", errors="replace",
-            timeout=120
+            timeout=120, **_SUBPROCESS_KWARGS
         )
     except subprocess.TimeoutExpired:
         raise RuntimeError("ffmpeg timeout (file too large or unresponsive)")

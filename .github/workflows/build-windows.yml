@@ -71,6 +71,8 @@ jobs:
             --hidden-import app.core.clip_analyzer `
             --hidden-import app.core.editor `
             --hidden-import app.core.mood_analyzer `
+            --hidden-import app.core.custom_patterns `
+            --hidden-import scipy.ndimage `
             --hidden-import app.gui `
             --hidden-import app.gui.main_window `
             --hidden-import app.gui.license_dialog `

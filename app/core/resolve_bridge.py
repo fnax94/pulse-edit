@@ -418,18 +418,19 @@ def diagnose():
 
 
 def _ensure_python3_on_path():
-    """Make python311.dll findable for fusionscript.dll on Windows.
-    Uses PyInstaller's bundled Python in _internal/ — no system install needed."""
+    """Make python311.dll and python3.exe findable for fusionscript.dll on Windows.
+    Checks python_shim/ (embeddable bundle) and _internal/ (PyInstaller)."""
     app_dir = os.path.dirname(sys.executable)
-    internal_dir = os.path.join(app_dir, "_internal")
-    if os.path.isdir(internal_dir):
-        os.environ["PATH"] = internal_dir + os.pathsep + os.environ.get("PATH", "")
-        if hasattr(os, "add_dll_directory"):
-            try:
-                os.add_dll_directory(internal_dir)
-            except OSError:
-                pass
-        _log.info(f"Added _internal to DLL search path: {internal_dir}")
+    for subdir in ["python_shim", "_internal"]:
+        d = os.path.join(app_dir, subdir)
+        if os.path.isdir(d):
+            os.environ["PATH"] = d + os.pathsep + os.environ.get("PATH", "")
+            if hasattr(os, "add_dll_directory"):
+                try:
+                    os.add_dll_directory(d)
+                except OSError:
+                    pass
+            _log.info(f"Added {subdir} to DLL search path: {d}")
 
 
 
