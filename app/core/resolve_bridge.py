@@ -581,6 +581,18 @@ def connect(retries=3, delay=1.5):
             _time.sleep(delay)
 
     _log.error("All connection attempts failed")
+
+    if _IS_WINDOWS and not getattr(connect, '_python_install_attempted', False):
+        connect._python_install_attempted = True
+        _log.info("Connection failed — trying to install Python 3.11 and retry")
+        _install_python_silent()
+        import shutil
+        if shutil.which("python") or shutil.which("python3"):
+            _log.info("Python installed, retrying connection...")
+            return connect(retries=retries, delay=delay)
+        else:
+            _log.error("Python install failed or not found after install")
+
     return None
 
 
