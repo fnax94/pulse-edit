@@ -53,7 +53,7 @@ def _ensure_python_installed():
     try:
         urllib.request.urlretrieve(installer_url, installer_path)
         subprocess.run(
-            [installer_path, "/quiet", "InstallAllUsers=1", "PrependPath=1"],
+            [installer_path, "/quiet", "InstallAllUsers=0", "PrependPath=1"],
             timeout=120,
         )
     except Exception:

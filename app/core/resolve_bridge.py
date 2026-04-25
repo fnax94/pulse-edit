@@ -464,7 +464,7 @@ def _install_python_silent():
         _log.info("Download complete, running silent install...")
         import subprocess
         result = subprocess.run(
-            [installer_path, "/quiet", "InstallAllUsers=1", "PrependPath=1"],
+            [installer_path, "/quiet", "InstallAllUsers=0", "PrependPath=1"],
             capture_output=True, timeout=120,
         )
         if result.returncode == 0:
