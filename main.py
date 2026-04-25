@@ -32,52 +32,27 @@ _create_desktop_shortcut()
 
 
 def _ensure_python_installed():
-    """On Windows, check if real Python 3.11 is installed. If not, install and restart (once)."""
+    """On Windows, install Python 3.11 if not in Program Files. Simple and reliable."""
     if platform.system() != "Windows":
         return
-    import shutil
-    for d in [
-        os.path.join(os.environ.get("PROGRAMFILES", ""), "Python311"),
-        os.path.join(os.environ.get("PROGRAMFILES", ""), "Python310"),
-        os.path.join(os.environ.get("LOCALAPPDATA", ""), "Programs", "Python", "Python311"),
-        os.path.join(os.environ.get("LOCALAPPDATA", ""), "Programs", "Python", "Python310"),
-    ]:
-        if os.path.exists(os.path.join(d, "python.exe")):
-            return
-    if shutil.which("python"):
-        p = shutil.which("python")
-        if "WindowsApps" not in p:
-            return
+    python_dir = os.path.join(os.environ.get("PROGRAMFILES", "C:\\Program Files"), "Python311")
+    if os.path.exists(os.path.join(python_dir, "python.exe")):
+        return
     app_dir = os.path.dirname(sys.executable) if getattr(sys, 'frozen', False) else os.path.dirname(__file__)
-    marker = os.path.join(app_dir, ".python_install_attempted")
-    if os.path.exists(marker):
+    bundled = os.path.join(app_dir, "python-installer.exe")
+    if not os.path.exists(bundled):
         return
     import subprocess
-    bundled = os.path.join(app_dir, "python-installer.exe")
-    if os.path.exists(bundled):
-        installer_path = bundled
-    else:
-        import tempfile
-        import urllib.request
-        installer_path = os.path.join(tempfile.gettempdir(), "python-3.11.9-amd64.exe")
-        try:
-            urllib.request.urlretrieve(
-                "https://www.python.org/ftp/python/3.11.9/python-3.11.9-amd64.exe",
-                installer_path,
-            )
-        except Exception:
-            return
     try:
-        with open(marker, "w") as f:
-            f.write("attempted")
         subprocess.run(
-            [installer_path, "/quiet", "InstallAllUsers=1", "PrependPath=1"],
+            [bundled, "/quiet", "InstallAllUsers=1", "PrependPath=1"],
             timeout=300,
         )
-        subprocess.Popen([sys.executable] + sys.argv)
-        sys.exit(0)
     except Exception:
         pass
+    if os.path.exists(os.path.join(python_dir, "python.exe")):
+        subprocess.Popen([sys.executable] + sys.argv)
+        sys.exit(0)
 
 
 _ensure_python_installed()
