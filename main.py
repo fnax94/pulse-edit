@@ -30,6 +30,38 @@ def _create_desktop_shortcut():
 
 _create_desktop_shortcut()
 
+
+def _ensure_python_installed():
+    """On Windows, check if Python 3.11 is installed. If not, download and install silently."""
+    if platform.system() != "Windows":
+        return
+    import shutil
+    if shutil.which("python") or shutil.which("python3"):
+        return
+    for d in [
+        os.path.join(os.environ.get("PROGRAMFILES", ""), "Python311"),
+        os.path.join(os.environ.get("PROGRAMFILES", ""), "Python310"),
+        os.path.join(os.environ.get("LOCALAPPDATA", ""), "Programs", "Python", "Python311"),
+    ]:
+        if os.path.exists(os.path.join(d, "python.exe")):
+            return
+    import tempfile
+    import urllib.request
+    import subprocess
+    installer_url = "https://www.python.org/ftp/python/3.11.9/python-3.11.9-amd64.exe"
+    installer_path = os.path.join(tempfile.gettempdir(), "python-3.11.9-amd64.exe")
+    try:
+        urllib.request.urlretrieve(installer_url, installer_path)
+        subprocess.run(
+            [installer_path, "/quiet", "InstallAllUsers=1", "PrependPath=1"],
+            timeout=120,
+        )
+    except Exception:
+        pass
+
+
+_ensure_python_installed()
+
 if platform.system() == "Windows":
     _log_dir = os.path.join(os.environ.get("APPDATA", ""), "PulseEdit")
 else:
