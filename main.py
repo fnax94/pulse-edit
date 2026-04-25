@@ -32,16 +32,14 @@ _create_desktop_shortcut()
 
 
 def _ensure_python_installed():
-    """On Windows, check if Python 3.11 is installed. If not, download and install silently."""
+    """On Windows, check if real Python 3.11 is installed. If not, install and restart."""
     if platform.system() != "Windows":
-        return
-    import shutil
-    if shutil.which("python") or shutil.which("python3"):
         return
     for d in [
         os.path.join(os.environ.get("PROGRAMFILES", ""), "Python311"),
         os.path.join(os.environ.get("PROGRAMFILES", ""), "Python310"),
         os.path.join(os.environ.get("LOCALAPPDATA", ""), "Programs", "Python", "Python311"),
+        os.path.join(os.environ.get("LOCALAPPDATA", ""), "Programs", "Python", "Python310"),
     ]:
         if os.path.exists(os.path.join(d, "python.exe")):
             return
@@ -66,6 +64,8 @@ def _ensure_python_installed():
             [installer_path, "/quiet", "InstallAllUsers=0", "PrependPath=1"],
             timeout=120,
         )
+        subprocess.Popen([sys.executable] + sys.argv)
+        sys.exit(0)
     except Exception:
         pass
 
