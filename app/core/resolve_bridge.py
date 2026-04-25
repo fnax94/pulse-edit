@@ -448,6 +448,39 @@ def _ensure_python3_on_path():
                     os.environ["PATH"] = d + os.pathsep + os.environ.get("PATH", "")
                     _log.info(f"Found system Python at {d}")
                     return
+    _install_python_silent()
+
+
+def _install_python_silent():
+    """Download and silently install Python 3.11 on Windows if not found."""
+    import tempfile
+    import urllib.request
+    _log.info("Python not found — attempting silent install of Python 3.11")
+    installer_url = "https://www.python.org/ftp/python/3.11.9/python-3.11.9-amd64.exe"
+    installer_path = os.path.join(tempfile.gettempdir(), "python-3.11.9-amd64.exe")
+    try:
+        _log.info(f"Downloading Python installer to {installer_path}")
+        urllib.request.urlretrieve(installer_url, installer_path)
+        _log.info("Download complete, running silent install...")
+        import subprocess
+        result = subprocess.run(
+            [installer_path, "/quiet", "InstallAllUsers=1", "PrependPath=1"],
+            capture_output=True, timeout=120,
+        )
+        if result.returncode == 0:
+            _log.info("Python 3.11 installed successfully")
+            for d in [
+                os.path.join(os.environ.get("PROGRAMFILES", ""), "Python311"),
+                os.path.join(os.environ.get("LOCALAPPDATA", ""), "Programs", "Python", "Python311"),
+            ]:
+                if os.path.exists(os.path.join(d, "python.exe")):
+                    os.environ["PATH"] = d + os.pathsep + os.environ.get("PATH", "")
+                    _log.info(f"Added newly installed Python to PATH: {d}")
+                    return
+        else:
+            _log.error(f"Python installer exited with code {result.returncode}")
+    except Exception as e:
+        _log.error(f"Failed to install Python: {e}")
 
 
 def connect(retries=3, delay=1.5):
