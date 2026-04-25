@@ -32,9 +32,10 @@ _create_desktop_shortcut()
 
 
 def _ensure_python_installed():
-    """On Windows, check if real Python 3.11 is installed. If not, install and restart."""
+    """On Windows, check if real Python 3.11 is installed. If not, install and restart (once)."""
     if platform.system() != "Windows":
         return
+    import shutil
     for d in [
         os.path.join(os.environ.get("PROGRAMFILES", ""), "Python311"),
         os.path.join(os.environ.get("PROGRAMFILES", ""), "Python310"),
@@ -43,8 +44,15 @@ def _ensure_python_installed():
     ]:
         if os.path.exists(os.path.join(d, "python.exe")):
             return
-    import subprocess
+    if shutil.which("python"):
+        p = shutil.which("python")
+        if "WindowsApps" not in p:
+            return
     app_dir = os.path.dirname(sys.executable) if getattr(sys, 'frozen', False) else os.path.dirname(__file__)
+    marker = os.path.join(app_dir, ".python_install_attempted")
+    if os.path.exists(marker):
+        return
+    import subprocess
     bundled = os.path.join(app_dir, "python-installer.exe")
     if os.path.exists(bundled):
         installer_path = bundled
@@ -60,10 +68,13 @@ def _ensure_python_installed():
         except Exception:
             return
     try:
+        with open(marker, "w") as f:
+            f.write("attempted")
         subprocess.run(
             [installer_path, "/quiet", "InstallAllUsers=0", "PrependPath=1"],
-            timeout=120,
+            timeout=300,
         )
+        os.remove(marker)
         subprocess.Popen([sys.executable] + sys.argv)
         sys.exit(0)
     except Exception:
