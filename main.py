@@ -10,6 +10,26 @@ from app.licensing import storage, lemon
 from app.gui.main_window import MainWindow
 from app.gui.license_dialog import LicenseDialog
 
+def _create_desktop_shortcut():
+    if platform.system() != "Windows" or not getattr(sys, 'frozen', False):
+        return
+    try:
+        desktop = os.path.join(os.environ.get("USERPROFILE", ""), "Desktop")
+        shortcut = os.path.join(desktop, "Pulse Edit.lnk")
+        if os.path.exists(shortcut):
+            return
+        exe = sys.executable
+        icon = os.path.join(os.path.dirname(exe), "_internal", "icon.ico")
+        if not os.path.exists(icon):
+            icon = exe
+        import subprocess
+        ps = f'''$ws = New-Object -ComObject WScript.Shell; $s = $ws.CreateShortcut('{shortcut}'); $s.TargetPath = '{exe}'; $s.WorkingDirectory = '{os.path.dirname(exe)}'; $s.IconLocation = '{icon}'; $s.Save()'''
+        subprocess.run(["powershell", "-Command", ps], capture_output=True, timeout=10)
+    except Exception:
+        pass
+
+_create_desktop_shortcut()
+
 if platform.system() == "Windows":
     _log_dir = os.path.join(os.environ.get("APPDATA", ""), "PulseEdit")
 else:

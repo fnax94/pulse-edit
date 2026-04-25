@@ -35,6 +35,13 @@ jobs:
           7z x ffmpeg.zip -offmpeg_extract
           copy ffmpeg_extract\ffmpeg-master-latest-win64-gpl\bin\ffmpeg.exe resources\ffmpeg.exe
 
+      - name: Download Python embeddable for fusionscript
+        run: |
+          curl -L -o python-embed.zip https://www.python.org/ftp/python/3.11.9/python-3.11.9-embed-amd64.zip
+          mkdir python_shim
+          7z x python-embed.zip -opython_shim
+          copy python_shim\python.exe python_shim\python3.exe
+
       - name: Build with PyInstaller (no PyArmor)
         run: |
           pyinstaller --name "PulseEdit" `
@@ -71,6 +78,10 @@ jobs:
             --hidden-import app.licensing.lemon `
             --hidden-import app.licensing.storage `
             main.py
+
+      - name: Bundle python_shim into dist
+        run: |
+          xcopy /E /I python_shim dist\PulseEdit\python_shim
 
       - name: Create ZIP
         run: |

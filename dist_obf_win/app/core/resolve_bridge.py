@@ -126,7 +126,7 @@ import subprocess as _subprocess
 import time as _time
 import logging as _logging
 
-_log = _logging.getLogger("resolve_bridge")
+_log = _logging.getLogger("pulseedit")
 _IS_WINDOWS = _platform.system() == "Windows"
 _IS_MAC = _platform.system() == "Darwin"
 
@@ -409,7 +409,45 @@ def diagnose():
         for p in _MAC_LIB_PATHS:
             exists = os.path.isdir(p)
             lines.append(f"  {'[OK]' if exists else '[--]'} {p}")
+    if _IS_WINDOWS:
+        import tempfile as _tf
+        lines.append(f"\nLog file: {os.path.join(_tf.gettempdir(), 'pulseedit_debug.log')}")
+    else:
+        lines.append("\nLog file: /tmp/pulseedit_debug.log")
     return "\n".join(lines)
+
+
+def _ensure_python3_on_path():
+    """Ensure python3.exe is findable on Windows — fusionscript.dll needs it during init."""
+    import shutil
+    if shutil.which("python3"):
+        return
+    app_dir = os.path.dirname(sys.executable)
+    shim_dir = os.path.join(app_dir, "python_shim")
+    if os.path.isdir(shim_dir) and (
+        os.path.exists(os.path.join(shim_dir, "python3.exe"))
+        or os.path.exists(os.path.join(shim_dir, "python.exe"))
+    ):
+        os.environ["PATH"] = shim_dir + os.pathsep + os.environ.get("PATH", "")
+        if hasattr(os, "add_dll_directory"):
+            try:
+                os.add_dll_directory(shim_dir)
+            except OSError:
+                pass
+        _log.info(f"Added bundled python_shim to PATH: {shim_dir}")
+        return
+    for candidate in [
+        os.path.join(os.environ.get("LOCALAPPDATA", ""), "Programs", "Python"),
+        os.path.join(os.environ.get("PROGRAMFILES", ""), "Python311"),
+        os.path.join(os.environ.get("PROGRAMFILES", ""), "Python310"),
+    ]:
+        if os.path.isdir(candidate):
+            for item in os.listdir(candidate) if os.path.basename(candidate).startswith("Python") else [""]:
+                d = os.path.join(candidate, item) if item else candidate
+                if os.path.exists(os.path.join(d, "python.exe")):
+                    os.environ["PATH"] = d + os.pathsep + os.environ.get("PATH", "")
+                    _log.info(f"Found system Python at {d}")
+                    return
 
 
 def connect(retries=3, delay=1.5):
@@ -440,6 +478,8 @@ def connect(retries=3, delay=1.5):
                     os.environ["PATH"] = lp + os.pathsep + current_path
                 if hasattr(os, "add_dll_directory"):
                     os.add_dll_directory(lp)
+        # fusionscript.dll needs python3.exe in PATH during init
+        _ensure_python3_on_path()
         if not os.environ.get("RESOLVE_SCRIPT_API", ""):
             for mp in _WIN_MODULE_PATHS:
                 script_api = os.path.dirname(mp)
@@ -469,20 +509,41 @@ def connect(retries=3, delay=1.5):
                             _log.info(f"Found script lib: {lib}")
                             break
 
+    # Pre-flight: try loading fusionscript DLL directly to catch load errors
+    if _IS_WINDOWS:
+        dll_path = os.environ.get("RESOLVE_SCRIPT_LIB", "")
+        if dll_path and os.path.exists(dll_path):
+            try:
+                import ctypes
+                ctypes.CDLL(dll_path)
+                _log.info(f"DLL pre-load OK: {dll_path}")
+            except OSError as e:
+                _log.error(f"DLL pre-load FAILED: {dll_path} — {e}")
+                _log.error("This usually means Visual C++ Redistributable is missing. Install from: https://aka.ms/vs/17/release/vc_redist.x64.exe")
+            except Exception as e:
+                _log.error(f"DLL pre-load unexpected error: {e}")
+        else:
+            _log.error(f"fusionscript.dll not found at: {dll_path}")
+
+    _log.info(f"ENV RESOLVE_SCRIPT_API = {os.environ.get('RESOLVE_SCRIPT_API', '(not set)')}")
+    _log.info(f"ENV RESOLVE_SCRIPT_LIB = {os.environ.get('RESOLVE_SCRIPT_LIB', '(not set)')}")
+    _log.info(f"sys.path Resolve entries: {[p for p in sys.path if 'Blackmagic' in p or 'Resolve' in p or 'resolve' in p]}")
+
     for attempt in range(retries):
         try:
             import DaVinciResolveScript as dvr
+            _log.info(f"DaVinciResolveScript imported OK (attempt {attempt + 1})")
             resolve = dvr.scriptapp("Resolve")
             if resolve:
                 _log.info(f"Connected to Resolve (attempt {attempt + 1})")
                 return resolve
-            _log.warning(f"scriptapp returned None (attempt {attempt + 1}/{retries})")
+            _log.warning(f"scriptapp returned None (attempt {attempt + 1}/{retries}) — Resolve may be Free edition or scripting disabled")
         except ImportError as e:
             _log.error(f"Cannot import DaVinciResolveScript: {e}")
             _log.error(f"Searched paths: {[p for p in sys.path if 'Blackmagic' in p or 'Resolve' in p or 'resolve' in p]}")
             return None
         except Exception as e:
-            _log.warning(f"Connect attempt {attempt + 1}/{retries} failed: {e}")
+            _log.warning(f"Connect attempt {attempt + 1}/{retries} failed: {type(e).__name__}: {e}")
         if attempt < retries - 1:
             _time.sleep(delay)
 
