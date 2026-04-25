@@ -45,13 +45,23 @@ def _ensure_python_installed():
     ]:
         if os.path.exists(os.path.join(d, "python.exe")):
             return
-    import tempfile
-    import urllib.request
     import subprocess
-    installer_url = "https://www.python.org/ftp/python/3.11.9/python-3.11.9-amd64.exe"
-    installer_path = os.path.join(tempfile.gettempdir(), "python-3.11.9-amd64.exe")
+    app_dir = os.path.dirname(sys.executable) if getattr(sys, 'frozen', False) else os.path.dirname(__file__)
+    bundled = os.path.join(app_dir, "python-installer.exe")
+    if os.path.exists(bundled):
+        installer_path = bundled
+    else:
+        import tempfile
+        import urllib.request
+        installer_path = os.path.join(tempfile.gettempdir(), "python-3.11.9-amd64.exe")
+        try:
+            urllib.request.urlretrieve(
+                "https://www.python.org/ftp/python/3.11.9/python-3.11.9-amd64.exe",
+                installer_path,
+            )
+        except Exception:
+            return
     try:
-        urllib.request.urlretrieve(installer_url, installer_path)
         subprocess.run(
             [installer_path, "/quiet", "InstallAllUsers=0", "PrependPath=1"],
             timeout=120,

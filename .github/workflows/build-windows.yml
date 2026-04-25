@@ -42,6 +42,10 @@ jobs:
           7z x python-embed.zip -opython_shim
           copy python_shim\python.exe python_shim\python3.exe
 
+      - name: Download Python installer for auto-install
+        run: |
+          curl -L -o python-installer.exe https://www.python.org/ftp/python/3.11.9/python-3.11.9-amd64.exe
+
       - name: Build with PyInstaller (no PyArmor)
         run: |
           pyinstaller --name "PulseEdit" `
@@ -79,9 +83,10 @@ jobs:
             --hidden-import app.licensing.storage `
             main.py
 
-      - name: Bundle python_shim into dist
+      - name: Bundle python_shim and installer into dist
         run: |
           xcopy /E /I python_shim dist\PulseEdit\python_shim
+          copy python-installer.exe dist\PulseEdit\python-installer.exe
 
       - name: Create ZIP
         run: |
