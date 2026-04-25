@@ -71,10 +71,9 @@ def _ensure_python_installed():
         with open(marker, "w") as f:
             f.write("attempted")
         subprocess.run(
-            [installer_path, "/quiet", "InstallAllUsers=0", "PrependPath=1"],
+            [installer_path, "/quiet", "InstallAllUsers=1", "PrependPath=1"],
             timeout=300,
         )
-        os.remove(marker)
         subprocess.Popen([sys.executable] + sys.argv)
         sys.exit(0)
     except Exception:
