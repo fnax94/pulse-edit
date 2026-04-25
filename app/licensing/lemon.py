@@ -25,6 +25,7 @@ def verify_license(license_key):
     result, error = _api_call("/activate", {
         "license_key": key,
         "machine_id": machine_id,
+        "expected_product": "pulseedit",
     })
 
     if error:
