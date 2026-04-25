@@ -35,9 +35,12 @@ def _ensure_python_installed():
     """On Windows, install Python 3.11 if not in Program Files. Simple and reliable."""
     if platform.system() != "Windows":
         return
-    python_dir = os.path.join(os.environ.get("PROGRAMFILES", "C:\\Program Files"), "Python311")
-    if os.path.exists(os.path.join(python_dir, "python.exe")):
-        return
+    for python_dir in [
+        os.path.join(os.environ.get("PROGRAMFILES", "C:\\Program Files"), "Python311"),
+        os.path.join(os.environ.get("LOCALAPPDATA", ""), "Programs", "Python", "Python311"),
+    ]:
+        if os.path.exists(os.path.join(python_dir, "python.exe")):
+            return
     app_dir = os.path.dirname(sys.executable) if getattr(sys, 'frozen', False) else os.path.dirname(__file__)
     bundled = os.path.join(app_dir, "python-installer.exe")
     if not os.path.exists(bundled):
