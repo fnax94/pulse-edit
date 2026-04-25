@@ -475,8 +475,158 @@ def _ensure_python3_on_path():
 
 
 
+class _SubprocessProxy:
+    """Proxy that delegates Resolve API calls to a subprocess worker.
+    Used on Windows when fusionscript.dll can't initialize inside PyInstaller.
+    Mimics the Resolve API so main_window.py works unchanged."""
+
+    def __init__(self, process):
+        self._proc = process
+        self._is_proxy = True
+        self._info = {}
+
+    def _send(self, cmd, **args):
+        import json
+        msg = json.dumps({"cmd": cmd, "args": args}) + "\n"
+        try:
+            self._proc.stdin.write(msg)
+            self._proc.stdin.flush()
+            line = self._proc.stdout.readline()
+            if not line:
+                _log.error("Worker process died")
+                return {"ok": False, "error": "worker died"}
+            return json.loads(line)
+        except Exception as e:
+            _log.error(f"Worker communication error: {e}")
+            return {"ok": False, "error": str(e)}
+
+    def alive(self):
+        return self._proc.poll() is None
+
+    def kill(self):
+        try:
+            self._proc.terminate()
+        except Exception:
+            pass
+
+    def _refresh(self):
+        self._info = self._send("refresh")
+        return self._info
+
+    def GetProjectManager(self):
+        return self
+
+    def GetCurrentProject(self):
+        self._refresh()
+        if self._info.get("ok") and self._info.get("project"):
+            return self
+        return None
+
+    def GetCurrentTimeline(self):
+        if self._info.get("timeline"):
+            return self
+        return None
+
+    def GetName(self):
+        return self._info.get("project", "") or self._info.get("timeline", "")
+
+    def GetSetting(self, key):
+        if key == "timelineFrameRate":
+            return self._info.get("fps", "24")
+        return ""
+
+    def GetMediaPool(self):
+        return self
+
+    def GetTrackCount(self, track_type):
+        return 0
+
+    def GetStartFrame(self):
+        resp = self._send("get_timeline_start_frame")
+        return resp.get("frame", 0)
+
+    def AddMarker(self, frame, color, name, note, duration):
+        resp = self._send("add_marker", frame=frame, color=color, name=name, note=note)
+        return resp.get("ok", False)
+
+    def DeleteMarkerAtFrame(self, frame):
+        return True
+
+    def GetMarkers(self):
+        return {}
+
+    def GetItemListInTrack(self, track_type, track_idx):
+        return []
+
+    def DeleteClips(self, items):
+        pass
+
+    def GetTrackName(self, track_type, track_idx):
+        return ""
+
+    def AppendToTimeline(self, items):
+        return []
+
+    def GetEnd(self):
+        return 0
+
+    def GetStart(self):
+        return 0
+
+    def GetCurrentVideoItem(self):
+        return None
+
+
+_worker_proxy = None
+
+
+def _start_subprocess_worker():
+    """Launch resolve_worker.py in python_shim/python.exe and return a proxy."""
+    import json
+    app_dir = os.path.dirname(sys.executable)
+    shim_python = os.path.join(app_dir, "python_shim", "python.exe")
+    if not os.path.exists(shim_python):
+        _log.error(f"python_shim not found: {shim_python}")
+        return None
+
+    worker_script = os.path.join(app_dir, "_internal", "app", "core", "resolve_worker.py")
+    if not os.path.exists(worker_script):
+        worker_script = os.path.join(os.path.dirname(__file__), "resolve_worker.py")
+    if not os.path.exists(worker_script):
+        _log.error(f"resolve_worker.py not found")
+        return None
+
+    _log.info(f"Starting subprocess worker: {shim_python} {worker_script}")
+    try:
+        proc = _subprocess.Popen(
+            [shim_python, worker_script],
+            stdin=_subprocess.PIPE,
+            stdout=_subprocess.PIPE,
+            stderr=_subprocess.PIPE,
+            text=True,
+            creationflags=0x08000000,
+        )
+        ready_line = proc.stdout.readline()
+        if not ready_line:
+            _log.error("Worker failed to start")
+            proc.terminate()
+            return None
+        ready = json.loads(ready_line)
+        if ready.get("ready"):
+            _log.info("Subprocess worker ready")
+            return _SubprocessProxy(proc)
+        _log.error(f"Worker not ready: {ready}")
+        proc.terminate()
+        return None
+    except Exception as e:
+        _log.error(f"Failed to start worker: {e}")
+        return None
+
+
 def connect(retries=3, delay=1.5):
     """Connette a DaVinci Resolve con retry. Ritorna l'oggetto resolve o None."""
+    global _worker_proxy
+
     if not _is_resolve_running():
         _log.warning("Resolve process not detected — trying to connect anyway")
 
@@ -503,7 +653,6 @@ def connect(retries=3, delay=1.5):
                     os.environ["PATH"] = lp + os.pathsep + current_path
                 if hasattr(os, "add_dll_directory"):
                     os.add_dll_directory(lp)
-        # fusionscript.dll needs python3.exe in PATH during init
         _ensure_python3_on_path()
         if not os.environ.get("RESOLVE_SCRIPT_API", ""):
             for mp in _WIN_MODULE_PATHS:
@@ -534,43 +683,50 @@ def connect(retries=3, delay=1.5):
                             _log.info(f"Found script lib: {lib}")
                             break
 
-    # Pre-flight: try loading fusionscript DLL directly to catch load errors
-    if _IS_WINDOWS:
-        dll_path = os.environ.get("RESOLVE_SCRIPT_LIB", "")
-        if dll_path and os.path.exists(dll_path):
-            try:
-                import ctypes
-                ctypes.CDLL(dll_path)
-                _log.info(f"DLL pre-load OK: {dll_path}")
-            except OSError as e:
-                _log.error(f"DLL pre-load FAILED: {dll_path} — {e}")
-                _log.error("This usually means Visual C++ Redistributable is missing. Install from: https://aka.ms/vs/17/release/vc_redist.x64.exe")
-            except Exception as e:
-                _log.error(f"DLL pre-load unexpected error: {e}")
-        else:
-            _log.error(f"fusionscript.dll not found at: {dll_path}")
-
     _log.info(f"ENV RESOLVE_SCRIPT_API = {os.environ.get('RESOLVE_SCRIPT_API', '(not set)')}")
     _log.info(f"ENV RESOLVE_SCRIPT_LIB = {os.environ.get('RESOLVE_SCRIPT_LIB', '(not set)')}")
-    _log.info(f"sys.path Resolve entries: {[p for p in sys.path if 'Blackmagic' in p or 'Resolve' in p or 'resolve' in p]}")
 
+    # Try direct import first (works on macOS and Windows with system Python)
+    direct_failed = False
     for attempt in range(retries):
         try:
             import DaVinciResolveScript as dvr
             _log.info(f"DaVinciResolveScript imported OK (attempt {attempt + 1})")
             resolve = dvr.scriptapp("Resolve")
             if resolve:
-                _log.info(f"Connected to Resolve (attempt {attempt + 1})")
+                _log.info(f"Connected to Resolve directly (attempt {attempt + 1})")
                 return resolve
-            _log.warning(f"scriptapp returned None (attempt {attempt + 1}/{retries}) — Resolve may be Free edition or scripting disabled")
+            _log.warning(f"scriptapp returned None (attempt {attempt + 1}/{retries})")
         except ImportError as e:
             _log.error(f"Cannot import DaVinciResolveScript: {e}")
-            _log.error(f"Searched paths: {[p for p in sys.path if 'Blackmagic' in p or 'Resolve' in p or 'resolve' in p]}")
-            return None
+            if not _IS_WINDOWS:
+                return None
+            direct_failed = True
+            break
+        except SystemError as e:
+            _log.warning(f"Direct import failed (PyInstaller conflict): {e}")
+            direct_failed = True
+            break
         except Exception as e:
             _log.warning(f"Connect attempt {attempt + 1}/{retries} failed: {type(e).__name__}: {e}")
+            direct_failed = True
+            break
         if attempt < retries - 1:
             _time.sleep(delay)
+
+    # Fallback: subprocess worker (Windows only, PyInstaller frozen apps)
+    if _IS_WINDOWS and direct_failed and getattr(sys, 'frozen', False):
+        _log.info("Falling back to subprocess worker for Resolve connection")
+        if _worker_proxy and _worker_proxy.alive():
+            _worker_proxy.kill()
+        _worker_proxy = _start_subprocess_worker()
+        if _worker_proxy:
+            resp = _worker_proxy._send("connect")
+            if resp.get("ok"):
+                _log.info(f"Connected to Resolve via subprocess worker")
+                return _worker_proxy
+            _log.error(f"Subprocess worker connect failed: {resp.get('error')}")
+        return None
 
     _log.error("All connection attempts failed")
     return None
@@ -589,8 +745,15 @@ def get_timeline_start_frame(timeline):
 
 # ─── Audio (identico a Beat Markers) ───
 
+def _is_proxy(obj):
+    return hasattr(obj, '_is_proxy')
+
+
 def get_audio_tracks(timeline):
     """Ritorna dict {label: track_index} delle tracce audio con clip."""
+    if _is_proxy(timeline):
+        resp = _worker_proxy._send("get_audio_tracks")
+        return resp.get("tracks", {}) if resp.get("ok") else {}
     tracks = {}
     for t_idx in range(1, timeline.GetTrackCount("audio") + 1):
         items = timeline.GetItemListInTrack("audio", t_idx)
@@ -608,6 +771,10 @@ def get_audio_tracks(timeline):
 
 def find_audio_file(timeline, track_idx):
     """Trova il percorso del file audio del primo clip nella traccia."""
+    if _is_proxy(timeline):
+        resp = _worker_proxy._send("find_audio_file", track_idx=track_idx)
+        path = resp.get("path") if resp.get("ok") else None
+        return path, [] if path else None
     items = timeline.GetItemListInTrack("audio", track_idx)
     if not items:
         return None, None
@@ -628,6 +795,9 @@ def find_audio_file(timeline, track_idx):
 
 def get_video_tracks(timeline):
     """Ritorna dict {label: track_index} delle tracce video."""
+    if _is_proxy(timeline):
+        resp = _worker_proxy._send("get_video_tracks")
+        return resp.get("tracks", {}) if resp.get("ok") else {}
     tracks = {}
     count = timeline.GetTrackCount("video")
     for t_idx in range(1, count + 1):
@@ -644,6 +814,9 @@ def get_video_tracks(timeline):
 
 def clear_video_track(timeline, track_index):
     """Rimuovi tutti i clip da una traccia video. Ritorna quanti rimossi."""
+    if _is_proxy(timeline):
+        resp = _worker_proxy._send("clear_video_track", track_idx=track_index)
+        return resp.get("removed", 0) if resp.get("ok") else 0
     items = timeline.GetItemListInTrack("video", track_index)
     if items and len(items) > 0:
         timeline.DeleteClips(items)
@@ -654,10 +827,15 @@ def clear_video_track(timeline, track_index):
 # ─── Beat markers on timeline ───
 
 def place_bar_markers(timeline, bar_times, fps, color="Yellow"):
-    """Piazza marker oro sulla timeline per ogni inizio battuta (downbeat).
-
-    Ritorna il numero di marker piazzati.
-    """
+    """Piazza marker oro sulla timeline per ogni inizio battuta (downbeat)."""
+    if _is_proxy(timeline):
+        added = 0
+        for i, bt in enumerate(bar_times):
+            frame = round(bt * fps)
+            _worker_proxy._send("add_marker", frame=frame, color=color,
+                                name="Bar", note=f"Bar {i + 1}")
+            added += 1
+        return added
     added = 0
     for i, bt in enumerate(bar_times):
         frame = round(bt * fps)
@@ -683,6 +861,9 @@ def place_upbeat_markers(timeline, upbeat_times, fps, color="Red"):
 
 def clear_timeline_markers(timeline):
     """Rimuovi tutti i marker dalla timeline. Ritorna quanti rimossi."""
+    if _is_proxy(timeline):
+        resp = _worker_proxy._send("clear_timeline_markers")
+        return resp.get("removed", 0) if resp.get("ok") else 0
     markers = timeline.GetMarkers()
     if not markers:
         return 0
@@ -697,6 +878,11 @@ def clear_timeline_markers(timeline):
 
 def get_media_pool_folders(resolve):
     """Ritorna dict {display_name: Folder} delle cartelle nel Media Pool."""
+    if _is_proxy(resolve):
+        resp = _worker_proxy._send("get_media_pool_folders")
+        if resp.get("ok"):
+            return {name: name for name in resp.get("folders", [])}
+        return {}
     project = resolve.GetProjectManager().GetCurrentProject()
     if not project:
         return {}
@@ -725,19 +911,20 @@ def get_clips_from_folder(folder, timeline_fps=None):
 
     DaVinci Resolve conforma automaticamente tutti i clip al FPS della timeline,
     quindi non filtriamo per FPS — clip con qualsiasi frame rate funzionano.
+    In proxy mode, ritorna dicts con 'id' per riferimento al worker.
     """
+    if isinstance(folder, str) and _worker_proxy and _worker_proxy.alive():
+        resp = _worker_proxy._send("get_clips_from_folder", folder=folder, fps=timeline_fps)
+        return resp.get("clips", []) if resp.get("ok") else []
     clips = folder.GetClipList()
     if not clips:
         return []
 
     video_clips = []
     for clip in clips:
-        # Deve avere un file path reale (escludi timeline/compound clip)
         file_path = clip.GetClipProperty("File Path") or ""
         if not file_path or not os.path.exists(file_path):
             continue
-
-        # Controlla che abbia frame video
         frames_str = clip.GetClipProperty("Frames")
         if not frames_str:
             continue
@@ -747,28 +934,21 @@ def get_clips_from_folder(folder, timeline_fps=None):
             continue
         if frames <= 0:
             continue
-
-        # Escludi clip solo-audio
         ext = os.path.splitext(file_path)[1].lower()
         audio_only_exts = {".wav", ".mp3", ".aac", ".flac", ".ogg", ".m4a", ".aif", ".aiff"}
         if ext in audio_only_exts:
             continue
-
         video_clips.append(clip)
     return video_clips
 
 
 def scan_clips_in_folder(folder, timeline_fps):
-    """Scansiona clip in una cartella e conta i clip video disponibili.
-
-    DaVinci Resolve conforma tutti i clip al FPS della timeline,
-    quindi qualsiasi FPS e' compatibile.
-
-    Ritorna dict con:
-        - total: numero totale clip video
-        - matched: uguale a total (tutti compatibili)
-        - warnings: lista vuota (nessun warning FPS)
-    """
+    """Scansiona clip in una cartella e conta i clip video disponibili."""
+    if isinstance(folder, str) and _worker_proxy and _worker_proxy.alive():
+        resp = _worker_proxy._send("scan_clips_in_folder", folder=folder)
+        if resp.get("ok"):
+            return {"total": resp.get("total", 0), "matched": resp.get("matched", 0), "warnings": []}
+        return {"total": 0, "matched": 0, "warnings": []}
     clips = folder.GetClipList()
     if not clips:
         return {"total": 0, "matched": 0, "warnings": []}
@@ -780,7 +960,6 @@ def scan_clips_in_folder(folder, timeline_fps):
         file_path = clip.GetClipProperty("File Path") or ""
         if not file_path or not os.path.exists(file_path):
             continue
-
         frames_str = clip.GetClipProperty("Frames")
         if not frames_str:
             continue
@@ -790,22 +969,24 @@ def scan_clips_in_folder(folder, timeline_fps):
             continue
         if frames <= 0:
             continue
-
         ext = os.path.splitext(file_path)[1].lower()
         if ext in audio_only_exts:
             continue
-
         total += 1
 
-    return {
-        "total": total,
-        "matched": total,
-        "warnings": [],
-    }
+    return {"total": total, "matched": total, "warnings": []}
 
 
 def get_clip_info(clip):
     """Ritorna dict con info essenziali di un clip."""
+    if isinstance(clip, dict) and "id" in clip:
+        return {
+            "name": clip.get("name", ""),
+            "file_path": clip.get("file_path", ""),
+            "frames": clip.get("frames", 0),
+            "fps": clip.get("fps", 24.0),
+            "media_pool_item": clip,
+        }
     fps_str = clip.GetClipProperty("FPS") or "24"
     try:
         fps = float(fps_str)
@@ -846,6 +1027,8 @@ def place_clips_precise(media_pool, timeline, clip_entries, track_index,
                         marker_frames, timeline_fps):
     """Piazza clip una alla volta leggendo la posizione reale da Resolve.
 
+    In proxy mode, delega tutto al subprocess worker.
+
     Usa GetItemListInTrack per leggere la posizione effettiva dopo
     ogni piazzamento, e ricalcola i frame sorgente della clip
     successiva per agganciare il marker con precisione al frame.
@@ -855,6 +1038,36 @@ def place_clips_precise(media_pool, timeline, clip_entries, track_index,
     import math
 
     if not clip_entries or not marker_frames:
+        return []
+
+    # Subprocess proxy mode: delegate entirely to worker
+    if _is_proxy(timeline):
+        try:
+            from app.licensing import storage as _cfg
+            _k = 0x3f7a9c2e1b5d0847
+            _v = getattr(_cfg, '_MODULE_SIG', '') == "e4a7c1f8d93b2065"
+            _v = _v and (_cfg._auth(7331) == (7331 ^ _k))
+            if not _v or (_cfg.is_trial_expired() and not _cfg.load_license()):
+                return []
+        except Exception:
+            return []
+        serialized = []
+        for e in clip_entries:
+            mpi = e["mediaPoolItem"]
+            clip_id = mpi.get("id", "") if isinstance(mpi, dict) else ""
+            serialized.append({
+                "clip_id": clip_id,
+                "startFrame": e["startFrame"],
+                "endFrame": e["endFrame"],
+                "clip_fps": e.get("clip_fps", timeline_fps),
+            })
+        resp = _worker_proxy._send("place_clips",
+                                   entries=serialized,
+                                   track_idx=track_index,
+                                   marker_frames=marker_frames,
+                                   fps=timeline_fps)
+        if resp.get("ok"):
+            return resp.get("items", [])
         return []
 
     try:
