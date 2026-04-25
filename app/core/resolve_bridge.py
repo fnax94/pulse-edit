@@ -417,6 +417,34 @@ def diagnose():
     return "\n".join(lines)
 
 
+def _register_python_in_registry():
+    """Register bundled python_shim in Windows registry so fusionscript.dll can find it.
+    fusionscript.dll checks HKCU\\Software\\Python\\PythonCore\\3.11\\InstallPath at init."""
+    app_dir = os.path.dirname(sys.executable)
+    shim_dir = os.path.join(app_dir, "python_shim")
+    if not os.path.isdir(shim_dir):
+        return
+    try:
+        import winreg
+        key_path = r"Software\Python\PythonCore\3.11\InstallPath"
+        with winreg.CreateKey(winreg.HKEY_CURRENT_USER, key_path) as key:
+            current = None
+            try:
+                current, _ = winreg.QueryValueEx(key, "ExecutablePath")
+            except FileNotFoundError:
+                pass
+            if current and os.path.exists(current):
+                _log.info(f"Python 3.11 already registered at: {current}")
+                return
+            shim_exe = os.path.join(shim_dir, "python.exe")
+            winreg.SetValueEx(key, "", 0, winreg.REG_SZ, shim_dir + os.sep)
+            winreg.SetValueEx(key, "ExecutablePath", 0, winreg.REG_SZ, shim_exe)
+            winreg.SetValueEx(key, "WindowedExecutablePath", 0, winreg.REG_SZ, shim_exe)
+            _log.info(f"Registered python_shim in registry: {shim_dir}")
+    except Exception as e:
+        _log.warning(f"Could not register python_shim in registry: {e}")
+
+
 def _ensure_python3_on_path():
     """Make python311.dll and python3.exe findable for fusionscript.dll on Windows.
     Checks python_shim/ (embeddable bundle) and _internal/ (PyInstaller)."""
@@ -431,6 +459,7 @@ def _ensure_python3_on_path():
                 except OSError:
                     pass
             _log.info(f"Added {subdir} to DLL search path: {d}")
+    _register_python_in_registry()
 
 
 
