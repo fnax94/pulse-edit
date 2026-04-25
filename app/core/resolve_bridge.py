@@ -418,69 +418,19 @@ def diagnose():
 
 
 def _ensure_python3_on_path():
-    """Ensure python3.exe is findable on Windows — fusionscript.dll needs it during init."""
-    import shutil
-    if shutil.which("python3"):
-        return
+    """Make python311.dll findable for fusionscript.dll on Windows.
+    Uses PyInstaller's bundled Python in _internal/ — no system install needed."""
     app_dir = os.path.dirname(sys.executable)
-    shim_dir = os.path.join(app_dir, "python_shim")
-    if os.path.isdir(shim_dir) and (
-        os.path.exists(os.path.join(shim_dir, "python3.exe"))
-        or os.path.exists(os.path.join(shim_dir, "python.exe"))
-    ):
-        os.environ["PATH"] = shim_dir + os.pathsep + os.environ.get("PATH", "")
+    internal_dir = os.path.join(app_dir, "_internal")
+    if os.path.isdir(internal_dir):
+        os.environ["PATH"] = internal_dir + os.pathsep + os.environ.get("PATH", "")
         if hasattr(os, "add_dll_directory"):
             try:
-                os.add_dll_directory(shim_dir)
+                os.add_dll_directory(internal_dir)
             except OSError:
                 pass
-        _log.info(f"Added bundled python_shim to PATH: {shim_dir}")
-        return
-    for candidate in [
-        os.path.join(os.environ.get("LOCALAPPDATA", ""), "Programs", "Python"),
-        os.path.join(os.environ.get("PROGRAMFILES", ""), "Python311"),
-        os.path.join(os.environ.get("PROGRAMFILES", ""), "Python310"),
-    ]:
-        if os.path.isdir(candidate):
-            for item in os.listdir(candidate) if os.path.basename(candidate).startswith("Python") else [""]:
-                d = os.path.join(candidate, item) if item else candidate
-                if os.path.exists(os.path.join(d, "python.exe")):
-                    os.environ["PATH"] = d + os.pathsep + os.environ.get("PATH", "")
-                    _log.info(f"Found system Python at {d}")
-                    return
-    _install_python_silent()
+        _log.info(f"Added _internal to DLL search path: {internal_dir}")
 
-
-def _install_python_silent():
-    """Download and silently install Python 3.11 on Windows if not found."""
-    import tempfile
-    import urllib.request
-    _log.info("Python not found — attempting silent install of Python 3.11")
-    installer_url = "https://www.python.org/ftp/python/3.11.9/python-3.11.9-amd64.exe"
-    installer_path = os.path.join(tempfile.gettempdir(), "python-3.11.9-amd64.exe")
-    try:
-        _log.info(f"Downloading Python installer to {installer_path}")
-        urllib.request.urlretrieve(installer_url, installer_path)
-        _log.info("Download complete, running silent install...")
-        import subprocess
-        result = subprocess.run(
-            [installer_path, "/quiet", "InstallAllUsers=1", "PrependPath=1"],
-            capture_output=True, timeout=120,
-        )
-        if result.returncode == 0:
-            _log.info("Python 3.11 installed successfully")
-            for d in [
-                os.path.join(os.environ.get("PROGRAMFILES", ""), "Python311"),
-                os.path.join(os.environ.get("LOCALAPPDATA", ""), "Programs", "Python", "Python311"),
-            ]:
-                if os.path.exists(os.path.join(d, "python.exe")):
-                    os.environ["PATH"] = d + os.pathsep + os.environ.get("PATH", "")
-                    _log.info(f"Added newly installed Python to PATH: {d}")
-                    return
-        else:
-            _log.error(f"Python installer exited with code {result.returncode}")
-    except Exception as e:
-        _log.error(f"Failed to install Python: {e}")
 
 
 def connect(retries=3, delay=1.5):
@@ -581,18 +531,6 @@ def connect(retries=3, delay=1.5):
             _time.sleep(delay)
 
     _log.error("All connection attempts failed")
-
-    if _IS_WINDOWS and not getattr(connect, '_python_install_attempted', False):
-        connect._python_install_attempted = True
-        _log.info("Connection failed — trying to install Python 3.11 and retry")
-        _install_python_silent()
-        import shutil
-        if shutil.which("python") or shutil.which("python3"):
-            _log.info("Python installed, retrying connection...")
-            return connect(retries=retries, delay=delay)
-        else:
-            _log.error("Python install failed or not found after install")
-
     return None
 
 

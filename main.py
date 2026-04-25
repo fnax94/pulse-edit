@@ -31,34 +31,6 @@ def _create_desktop_shortcut():
 _create_desktop_shortcut()
 
 
-def _ensure_python_installed():
-    """On Windows, install Python 3.11 if not in Program Files. Simple and reliable."""
-    if platform.system() != "Windows":
-        return
-    for python_dir in [
-        os.path.join(os.environ.get("PROGRAMFILES", "C:\\Program Files"), "Python311"),
-        os.path.join(os.environ.get("LOCALAPPDATA", ""), "Programs", "Python", "Python311"),
-    ]:
-        if os.path.exists(os.path.join(python_dir, "python.exe")):
-            return
-    app_dir = os.path.dirname(sys.executable) if getattr(sys, 'frozen', False) else os.path.dirname(__file__)
-    bundled = os.path.join(app_dir, "python-installer.exe")
-    if not os.path.exists(bundled):
-        return
-    import subprocess
-    try:
-        subprocess.run(
-            [bundled, "/quiet", "InstallAllUsers=1", "PrependPath=1"],
-            timeout=300,
-        )
-    except Exception:
-        pass
-    if os.path.exists(os.path.join(python_dir, "python.exe")):
-        subprocess.Popen([sys.executable] + sys.argv)
-        sys.exit(0)
-
-
-_ensure_python_installed()
 
 if platform.system() == "Windows":
     _log_dir = os.path.join(os.environ.get("APPDATA", ""), "PulseEdit")
