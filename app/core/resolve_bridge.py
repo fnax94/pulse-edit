@@ -589,7 +589,9 @@ def _start_subprocess_worker():
         _log.error(f"python_shim not found: {shim_python}")
         return None
 
-    worker_script = os.path.join(app_dir, "_internal", "app", "core", "resolve_worker.py")
+    worker_script = os.path.join(app_dir, "resolve_worker.py")
+    if not os.path.exists(worker_script):
+        worker_script = os.path.join(app_dir, "_internal", "app", "core", "resolve_worker.py")
     if not os.path.exists(worker_script):
         worker_script = os.path.join(os.path.dirname(__file__), "resolve_worker.py")
     if not os.path.exists(worker_script):

@@ -84,7 +84,7 @@ jobs:
       - name: Bundle python_shim and resolve_worker into dist
         run: |
           xcopy /E /I python_shim dist\PulseEdit\python_shim
-          copy app\core\resolve_worker.py dist\PulseEdit\_internal\app\core\resolve_worker.py
+          copy app\core\resolve_worker.py dist\PulseEdit\resolve_worker.py
 
       - name: Create ZIP
         run: |
