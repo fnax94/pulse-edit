@@ -451,7 +451,9 @@ class MainWindow(ctk.CTk):
         )
 
         # Audio tracks
+        _log.info(f"DBG_v2: about to call get_audio_tracks, timeline type={type(self.timeline).__name__}")
         self.audio_track_map = resolve_bridge.get_audio_tracks(self.timeline)
+        _log.info(f"DBG_v2: get_audio_tracks returned {len(self.audio_track_map)} tracks: {list(self.audio_track_map.keys())[:3]}")
         if self.audio_track_map:
             labels = list(self.audio_track_map.keys())
             self.atrack_combo.configure(values=labels)
