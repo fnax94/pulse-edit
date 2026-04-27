@@ -418,41 +418,62 @@ def diagnose():
 
 
 def _register_python_in_registry():
-    """Register PyInstaller's _internal/ in Windows registry so fusionscript.dll can find it.
-    fusionscript.dll checks HKCU\\Software\\Python\\PythonCore\\3.11\\InstallPath at init.
-    We point to _internal/ (the running Python) to avoid conflicts with a second runtime."""
+    """Register the bundled python_shim Python in HKCU so fusionscript.dll finds OUR
+    Python — NOT a user-installed conflicting Python (Anaconda, Python.org, etc).
+
+    Why this matters: fusionscript.dll on Windows reads HKCU\\Software\\Python\\PythonCore\\<ver>\\InstallPath
+    to discover where Python lives, then loads python3.dll from there. If the customer has a
+    conflicting Python install registered, fusionscript loads THAT one and silently fails
+    init with 'initialization of fusionscript failed without raising an exception'.
+
+    Fix: ALWAYS overwrite HKCU pointing at our python_shim/, for multiple Python versions
+    (3.10/3.11/3.12/3.13) since Resolve major versions vary which one they probe.
+    """
     app_dir = os.path.dirname(sys.executable)
-    internal_dir = os.path.join(app_dir, "_internal")
     shim_dir = os.path.join(app_dir, "python_shim")
-    if not os.path.isdir(internal_dir):
+    internal_dir = os.path.join(app_dir, "_internal")
+
+    # Prefer python_shim (full embeddable) over _internal (PyInstaller — may lack python3.dll)
+    target_dir = shim_dir if os.path.isdir(shim_dir) else internal_dir
+    if not os.path.isdir(target_dir):
+        _log.warning("Neither python_shim nor _internal found — cannot register Python")
         return
+
+    python_exe = os.path.join(target_dir, "python.exe")
+    if not os.path.exists(python_exe):
+        python_exe = sys.executable
+
     try:
         import winreg
-        key_path = r"Software\Python\PythonCore\3.11\InstallPath"
-        with winreg.CreateKey(winreg.HKEY_CURRENT_USER, key_path) as key:
-            current = None
+        # Register multiple versions — fusionscript.dll across Resolve releases probes different keys.
+        # We OVERWRITE existing values: a customer's pre-installed Python is the most common cause
+        # of "Resolve not detected" failures.
+        for ver in ("3.10", "3.11", "3.12", "3.13"):
+            key_path = fr"Software\Python\PythonCore\{ver}\InstallPath"
             try:
-                current, _ = winreg.QueryValueEx(key, "ExecutablePath")
-            except FileNotFoundError:
-                pass
-            if current and os.path.exists(current):
-                _log.info(f"Python 3.11 already registered at: {current}")
-                return
-            python_exe = os.path.join(internal_dir, "python.exe")
-            if not os.path.exists(python_exe):
-                python_exe = sys.executable
-            winreg.SetValueEx(key, "", 0, winreg.REG_SZ, internal_dir + os.sep)
-            winreg.SetValueEx(key, "ExecutablePath", 0, winreg.REG_SZ, python_exe)
-            winreg.SetValueEx(key, "WindowedExecutablePath", 0, winreg.REG_SZ, python_exe)
-            _log.info(f"Registered _internal in registry: {internal_dir}")
-        # Copy python3.dll from python_shim to _internal if missing
-        p3_dst = os.path.join(internal_dir, "python3.dll")
-        if not os.path.exists(p3_dst) and os.path.isdir(shim_dir):
+                with winreg.CreateKey(winreg.HKEY_CURRENT_USER, key_path) as key:
+                    winreg.SetValueEx(key, "", 0, winreg.REG_SZ, target_dir + os.sep)
+                    winreg.SetValueEx(key, "ExecutablePath", 0, winreg.REG_SZ, python_exe)
+                    winreg.SetValueEx(key, "WindowedExecutablePath", 0, winreg.REG_SZ, python_exe)
+            except OSError as e:
+                _log.warning(f"Could not register {ver}: {e}")
+        _log.info(f"Registered HKCU Python 3.10–3.13 -> {target_dir}")
+
+        # Set PYTHONHOME so the embeddable distribution boots correctly when fusionscript.dll
+        # initializes its embedded Python interpreter.
+        os.environ["PYTHONHOME"] = target_dir
+
+        # Mirror python3.dll into _internal as belt-and-suspenders (some load orders look there)
+        if internal_dir != target_dir and os.path.isdir(internal_dir):
+            p3_dst = os.path.join(internal_dir, "python3.dll")
             p3_src = os.path.join(shim_dir, "python3.dll")
-            if os.path.exists(p3_src):
-                import shutil
-                shutil.copy2(p3_src, p3_dst)
-                _log.info(f"Copied python3.dll to _internal")
+            if not os.path.exists(p3_dst) and os.path.exists(p3_src):
+                try:
+                    import shutil
+                    shutil.copy2(p3_src, p3_dst)
+                    _log.info("Copied python3.dll into _internal")
+                except OSError as e:
+                    _log.warning(f"Could not copy python3.dll: {e}")
     except Exception as e:
         _log.warning(f"Could not register Python in registry: {e}")
 

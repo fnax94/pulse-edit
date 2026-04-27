@@ -10,7 +10,12 @@ import json
 
 
 def _setup_resolve():
-    """Setup paths and connect to Resolve. Returns (resolve, error_string)."""
+    """Setup paths and connect to Resolve. Returns (resolve, error_string).
+
+    Belt-and-suspenders: configure PYTHONHOME + HKCU registry pointing at this very
+    interpreter, in case the subprocess was launched without the parent's env. Without
+    these, fusionscript.dll silently fails init when a conflicting Python is registered.
+    """
     # Add Resolve scripting modules to path
     module_paths = [
         os.path.join(os.environ.get("PROGRAMDATA", ""), "Blackmagic Design",
@@ -20,7 +25,27 @@ def _setup_resolve():
         if os.path.isdir(mp) and mp not in sys.path:
             sys.path.insert(0, mp)
 
-    # Set env vars
+    # Force PYTHONHOME to this interpreter's prefix
+    own_prefix = sys.prefix
+    os.environ["PYTHONHOME"] = own_prefix
+
+    # Force HKCU registry to point at this interpreter — overwrites any conflicting Python install
+    try:
+        import winreg
+        own_exe = sys.executable
+        for ver in ("3.10", "3.11", "3.12", "3.13"):
+            try:
+                with winreg.CreateKey(winreg.HKEY_CURRENT_USER,
+                                      fr"Software\Python\PythonCore\{ver}\InstallPath") as key:
+                    winreg.SetValueEx(key, "", 0, winreg.REG_SZ, own_prefix + os.sep)
+                    winreg.SetValueEx(key, "ExecutablePath", 0, winreg.REG_SZ, own_exe)
+                    winreg.SetValueEx(key, "WindowedExecutablePath", 0, winreg.REG_SZ, own_exe)
+            except OSError:
+                pass
+    except ImportError:
+        pass
+
+    # Set Resolve env vars
     lib_path = os.environ.get("RESOLVE_SCRIPT_LIB", "")
     if not lib_path:
         default = os.path.join(os.environ.get("PROGRAMFILES", ""),
@@ -32,8 +57,18 @@ def _setup_resolve():
                                "Blackmagic Design", "DaVinci Resolve")
     if os.path.isdir(resolve_dir):
         if hasattr(os, "add_dll_directory"):
-            os.add_dll_directory(resolve_dir)
+            try:
+                os.add_dll_directory(resolve_dir)
+            except OSError:
+                pass
         os.environ["PATH"] = resolve_dir + os.pathsep + os.environ.get("PATH", "")
+
+    # Add own interpreter dir to DLL search so python3.dll is found locally
+    if hasattr(os, "add_dll_directory"):
+        try:
+            os.add_dll_directory(own_prefix)
+        except OSError:
+            pass
 
     try:
         import DaVinciResolveScript as dvr
