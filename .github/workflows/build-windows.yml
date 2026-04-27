@@ -86,6 +86,88 @@ jobs:
           xcopy /E /I python_shim dist\PulseEdit\python_shim
           copy app\core\resolve_worker.py dist\PulseEdit\resolve_worker.py
 
+      - name: Remove legacy artifacts and clean dist
+        run: |
+          if (Test-Path "dist\PulseEdit\python-installer.exe") {
+            Remove-Item "dist\PulseEdit\python-installer.exe" -Force
+            Write-Host "Removed legacy python-installer.exe"
+          }
+
+      - name: Add README and Avvia launcher to dist root
+        shell: pwsh
+        run: |
+          $readme = @"
+          ============================================
+            Pulse Edit — Quick Start (Windows)
+          ============================================
+
+          Pulse Edit auto-detects beats in your audio and places markers on your
+          DaVinci Resolve timeline so you can edit on the beat in seconds.
+
+          ----- Requirements -----
+
+          - Windows 10 or 11 (64-bit)
+          - DaVinci Resolve Studio 18.x or 20.x  (the free edition does not
+            allow external scripting and Pulse Edit cannot connect to it)
+          - In Resolve: Preferences > System > General >
+            "External scripting using" set to "Local"
+
+          ----- How to run -----
+
+          1. Open DaVinci Resolve and load any project + timeline.
+          2. Double-click "PulseEdit.exe" in this folder.
+          3. The first time, Windows SmartScreen will say
+             "Windows protected your PC".
+             - Click "More info"
+             - Click "Run anyway"
+             (Pulse Edit is safe — this warning appears for any app
+             that is not yet code-signed.)
+          4. The Pulse Edit window opens.
+             You should see "Connected — Timeline 1 (xx fps)" in green.
+          5. Pick the audio track, click "Detect Beats" — done.
+
+          ----- Activating your license -----
+
+          Click "Activate" in the bottom-right corner and paste the license
+          key you received by email. The trial allows 4 free uses.
+
+          ----- Troubleshooting -----
+
+          * "Resolve not detected": make sure Resolve is open AND a project
+            is loaded AND scripting is set to "Local" in preferences.
+          * Antivirus warning: add the PulseEdit folder to your antivirus
+            exclusions. Pulse Edit is safe but unsigned binaries sometimes
+            trigger heuristic detections.
+          * Need help? Reply to your purchase email or visit pulseedit.com.
+
+          ----- What's in this folder -----
+
+          PulseEdit.exe       The application
+          python_shim/        Python runtime needed to talk to Resolve
+          _internal/          Application libraries (do not modify)
+          README.txt          This file
+
+          ----- About -----
+
+          Pulse Edit is made by AB Tools — a small independent studio.
+          We're not yet code-signed by Microsoft, so SmartScreen warnings
+          are normal. The app contains zero telemetry and zero ads.
+          "@
+          $readme | Out-File -Encoding utf8 dist\PulseEdit\README.txt
+
+          $bat = @"
+          @echo off
+          REM Quick launcher for Pulse Edit. If SmartScreen blocks PulseEdit.exe,
+          REM right-click this file > Properties > Unblock, then double-click.
+          start "" "%~dp0PulseEdit.exe"
+          "@
+          $bat | Out-File -Encoding ascii "dist\PulseEdit\Avvia Pulse Edit.bat"
+
+      - name: List final dist contents (sanity check)
+        shell: pwsh
+        run: |
+          Get-ChildItem dist\PulseEdit | Select-Object Name, Length
+
       - name: Create ZIP
         run: |
           cd dist
