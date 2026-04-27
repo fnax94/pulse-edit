@@ -780,7 +780,11 @@ def get_timeline_start_frame(timeline):
 # ─── Audio (identico a Beat Markers) ───
 
 def _is_proxy(obj):
-    return hasattr(obj, '_is_proxy')
+    # Cannot use hasattr here — Resolve's PyRemoteObject has a magic __getattr__
+    # that responds True to any attribute name, so hasattr(obj, '_is_proxy')
+    # is True even for real Resolve API objects. Use isinstance against the
+    # actual proxy class instead.
+    return isinstance(obj, _SubprocessProxy)
 
 
 def get_audio_tracks(timeline):
