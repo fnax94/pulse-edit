@@ -601,6 +601,17 @@ class _SubprocessProxy:
 _worker_proxy = None
 
 
+def _proxy_send(cmd, **args):
+    """Safe wrapper around _worker_proxy._send.
+    If the subprocess worker isn't running (Resolve closed, init failed,
+    or worker died), returns a sentinel error dict instead of crashing.
+    Callers already use resp.get("...") with defaults, so they degrade
+    gracefully (e.g. get_audio_tracks returns {})."""
+    if _worker_proxy is None:
+        return {"ok": False, "error": "worker_not_initialized"}
+    return _proxy_send(cmd, **args)
+
+
 def _start_subprocess_worker():
     """Launch resolve_worker.py in python_shim/python.exe and return a proxy."""
     import json
@@ -744,7 +755,7 @@ def connect(retries=3, delay=1.5):
             _worker_proxy.kill()
         _worker_proxy = _start_subprocess_worker()
         if _worker_proxy:
-            resp = _worker_proxy._send("connect")
+            resp = _proxy_send("connect")
             if resp.get("ok"):
                 _log.info(f"Connected to Resolve via subprocess worker")
                 return _worker_proxy
@@ -775,7 +786,7 @@ def _is_proxy(obj):
 def get_audio_tracks(timeline):
     """Ritorna dict {label: track_index} delle tracce audio con clip."""
     if _is_proxy(timeline):
-        resp = _worker_proxy._send("get_audio_tracks")
+        resp = _proxy_send("get_audio_tracks")
         return resp.get("tracks", {}) if resp.get("ok") else {}
     tracks = {}
     for t_idx in range(1, timeline.GetTrackCount("audio") + 1):
@@ -795,7 +806,7 @@ def get_audio_tracks(timeline):
 def find_audio_file(timeline, track_idx):
     """Trova il percorso del file audio del primo clip nella traccia."""
     if _is_proxy(timeline):
-        resp = _worker_proxy._send("find_audio_file", track_idx=track_idx)
+        resp = _proxy_send("find_audio_file", track_idx=track_idx)
         path = resp.get("path") if resp.get("ok") else None
         return path, [] if path else None
     items = timeline.GetItemListInTrack("audio", track_idx)
@@ -819,7 +830,7 @@ def find_audio_file(timeline, track_idx):
 def get_video_tracks(timeline):
     """Ritorna dict {label: track_index} delle tracce video."""
     if _is_proxy(timeline):
-        resp = _worker_proxy._send("get_video_tracks")
+        resp = _proxy_send("get_video_tracks")
         return resp.get("tracks", {}) if resp.get("ok") else {}
     tracks = {}
     count = timeline.GetTrackCount("video")
@@ -838,7 +849,7 @@ def get_video_tracks(timeline):
 def clear_video_track(timeline, track_index):
     """Rimuovi tutti i clip da una traccia video. Ritorna quanti rimossi."""
     if _is_proxy(timeline):
-        resp = _worker_proxy._send("clear_video_track", track_idx=track_index)
+        resp = _proxy_send("clear_video_track", track_idx=track_index)
         return resp.get("removed", 0) if resp.get("ok") else 0
     items = timeline.GetItemListInTrack("video", track_index)
     if items and len(items) > 0:
@@ -855,7 +866,7 @@ def place_bar_markers(timeline, bar_times, fps, color="Yellow"):
         added = 0
         for i, bt in enumerate(bar_times):
             frame = round(bt * fps)
-            _worker_proxy._send("add_marker", frame=frame, color=color,
+            _proxy_send("add_marker", frame=frame, color=color,
                                 name="Bar", note=f"Bar {i + 1}")
             added += 1
         return added
@@ -885,7 +896,7 @@ def place_upbeat_markers(timeline, upbeat_times, fps, color="Red"):
 def clear_timeline_markers(timeline):
     """Rimuovi tutti i marker dalla timeline. Ritorna quanti rimossi."""
     if _is_proxy(timeline):
-        resp = _worker_proxy._send("clear_timeline_markers")
+        resp = _proxy_send("clear_timeline_markers")
         return resp.get("removed", 0) if resp.get("ok") else 0
     markers = timeline.GetMarkers()
     if not markers:
@@ -902,7 +913,7 @@ def clear_timeline_markers(timeline):
 def get_media_pool_folders(resolve):
     """Ritorna dict {display_name: Folder} delle cartelle nel Media Pool."""
     if _is_proxy(resolve):
-        resp = _worker_proxy._send("get_media_pool_folders")
+        resp = _proxy_send("get_media_pool_folders")
         if resp.get("ok"):
             return {name: name for name in resp.get("folders", [])}
         return {}
@@ -937,7 +948,7 @@ def get_clips_from_folder(folder, timeline_fps=None):
     In proxy mode, ritorna dicts con 'id' per riferimento al worker.
     """
     if isinstance(folder, str) and _worker_proxy and _worker_proxy.alive():
-        resp = _worker_proxy._send("get_clips_from_folder", folder=folder, fps=timeline_fps)
+        resp = _proxy_send("get_clips_from_folder", folder=folder, fps=timeline_fps)
         return resp.get("clips", []) if resp.get("ok") else []
     clips = folder.GetClipList()
     if not clips:
@@ -968,7 +979,7 @@ def get_clips_from_folder(folder, timeline_fps=None):
 def scan_clips_in_folder(folder, timeline_fps):
     """Scansiona clip in una cartella e conta i clip video disponibili."""
     if isinstance(folder, str) and _worker_proxy and _worker_proxy.alive():
-        resp = _worker_proxy._send("scan_clips_in_folder", folder=folder)
+        resp = _proxy_send("scan_clips_in_folder", folder=folder)
         if resp.get("ok"):
             return {"total": resp.get("total", 0), "matched": resp.get("matched", 0), "warnings": []}
         return {"total": 0, "matched": 0, "warnings": []}
@@ -1084,7 +1095,7 @@ def place_clips_precise(media_pool, timeline, clip_entries, track_index,
                 "endFrame": e["endFrame"],
                 "clip_fps": e.get("clip_fps", timeline_fps),
             })
-        resp = _worker_proxy._send("place_clips",
+        resp = _proxy_send("place_clips",
                                    entries=serialized,
                                    track_idx=track_index,
                                    marker_frames=marker_frames,
