@@ -789,8 +789,13 @@ def get_audio_tracks(timeline):
         resp = _proxy_send("get_audio_tracks")
         return resp.get("tracks", {}) if resp.get("ok") else {}
     tracks = {}
-    for t_idx in range(1, timeline.GetTrackCount("audio") + 1):
+    total = timeline.GetTrackCount("audio")
+    _log.info(f"get_audio_tracks: timeline reports {total} audio tracks")
+    for t_idx in range(1, total + 1):
         items = timeline.GetItemListInTrack("audio", t_idx)
+        n_items = len(items) if items else 0
+        track_name = timeline.GetTrackName("audio", t_idx) if hasattr(timeline, "GetTrackName") else ""
+        _log.info(f"get_audio_tracks: A{t_idx} '{track_name}' -> {n_items} items")
         if items and len(items) > 0:
             name = ""
             for item in items:
@@ -800,6 +805,8 @@ def get_audio_tracks(timeline):
                     break
             label = f"Track {t_idx}: {name} ({len(items)} clip)"
             tracks[label] = t_idx
+    if not tracks:
+        _log.warning(f"get_audio_tracks: returned empty (timeline had {total} audio tracks but none with clips)")
     return tracks
 
 
