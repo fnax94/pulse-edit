@@ -1,0 +1,135 @@
+name: Build macOS (signed + notarized)
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Release tag to upload to (e.g. pulse-edit-v1.4)'
+        required: true
+        default: 'pulse-edit-v1.4'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-14
+    env:
+      KEYCHAIN_PROFILE: gha-notarize
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pyinstaller customtkinter librosa scipy soundfile numba soxr pillow scikit-learn requests
+
+      - name: Build with PyInstaller
+        run: |
+          pyinstaller --name "PulseEdit" \
+            --windowed --noconfirm \
+            --icon resources/icon.icns \
+            --collect-all customtkinter \
+            --add-binary "resources/ffmpeg:." \
+            --hidden-import librosa \
+            --hidden-import librosa.util \
+            --hidden-import librosa.filters \
+            --hidden-import librosa.feature \
+            --hidden-import librosa.beat \
+            --hidden-import librosa.onset \
+            --hidden-import librosa.core \
+            --hidden-import scipy.signal \
+            --hidden-import scipy.fft \
+            --hidden-import scipy.ndimage \
+            --hidden-import soundfile \
+            --hidden-import sklearn.utils._cython_blas \
+            --hidden-import sklearn.neighbors.typedefs \
+            --hidden-import sklearn.neighbors._partition_nodes \
+            --hidden-import sklearn.tree._utils \
+            --hidden-import numba \
+            --hidden-import soxr \
+            --hidden-import numpy \
+            --hidden-import app.core.clip_analyzer \
+            --hidden-import app.core.editor \
+            --hidden-import app.core.mood_analyzer \
+            --hidden-import app.core.custom_patterns \
+            main.py
+
+      - name: Import Developer ID certificate
+        env:
+          P12_BASE64: ${{ secrets.MACOS_CERTIFICATE_P12_BASE64 }}
+          P12_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_P12_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ github.run_id }}-${{ github.run_number }}
+        run: |
+          KC=build.keychain
+          security create-keychain -p "$KEYCHAIN_PASSWORD" $KC
+          security set-keychain-settings -lut 21600 $KC
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" $KC
+          security list-keychains -d user -s $KC $(security list-keychains -d user | tr -d '"')
+          echo "$P12_BASE64" | base64 --decode > cert.p12
+          security import cert.p12 -k $KC -P "$P12_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" $KC
+          rm cert.p12
+          security find-identity -v -p codesigning $KC
+
+      - name: Save notarytool credentials
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+        run: |
+          xcrun notarytool store-credentials "$KEYCHAIN_PROFILE" \
+            --apple-id "$APPLE_ID" \
+            --team-id "$APPLE_TEAM_ID" \
+            --password "$APPLE_APP_PASSWORD"
+
+      - name: Patch Info.plist + codesign + notarize
+        env:
+          IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+        run: |
+          APP="dist/PulseEdit.app"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier com.abtools.pulseedit" "$APP/Contents/Info.plist" 2>/dev/null \
+            || /usr/libexec/PlistBuddy -c "Add :CFBundleIdentifier string com.abtools.pulseedit" "$APP/Contents/Info.plist"
+          /usr/libexec/PlistBuddy -c "Set :NSMicrophoneUsageDescription 'Pulse Edit analizza file audio per generare beat markers.'" "$APP/Contents/Info.plist" 2>/dev/null \
+            || /usr/libexec/PlistBuddy -c "Add :NSMicrophoneUsageDescription string 'Pulse Edit analizza file audio per generare beat markers.'" "$APP/Contents/Info.plist"
+          /usr/libexec/PlistBuddy -c "Set :NSAppleEventsUsageDescription 'Pulse Edit invia comandi a DaVinci Resolve per importare i marker.'" "$APP/Contents/Info.plist" 2>/dev/null \
+            || /usr/libexec/PlistBuddy -c "Add :NSAppleEventsUsageDescription string 'Pulse Edit invia comandi a DaVinci Resolve per importare i marker.'" "$APP/Contents/Info.plist"
+
+          # Sign nested binaries first
+          find "$APP/Contents" -type f \( -name "*.dylib" -o -name "*.so" -o -perm +111 \) -print0 \
+            | xargs -0 -I{} codesign --force --options runtime --timestamp --sign "$IDENTITY" "{}" 2>/dev/null || true
+
+          codesign --force --deep --options runtime --timestamp \
+            --entitlements entitlements.plist \
+            --sign "$IDENTITY" "$APP"
+
+          codesign --verify --deep --strict --verbose=2 "$APP"
+
+          ZIP="dist/PulseEdit-macOS.zip"
+          rm -f "$ZIP"
+          ditto -c -k --keepParent "$APP" "$ZIP"
+
+          xcrun notarytool submit "$ZIP" --keychain-profile "$KEYCHAIN_PROFILE" --wait
+
+          xcrun stapler staple "$APP"
+          xcrun stapler validate "$APP"
+
+          rm -f "$ZIP"
+          ditto -c -k --keepParent "$APP" "$ZIP"
+
+      - name: Upload to GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.event.inputs.release_tag }}
+        run: |
+          gh release upload "$TAG" dist/PulseEdit-macOS.zip --clobber
+
+      - name: Cleanup keychain
+        if: always()
+        run: |
+          security delete-keychain build.keychain || true

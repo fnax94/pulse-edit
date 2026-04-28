@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- Hardened runtime baseline. Apple richiede questo per la notarizzazione. -->
+    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+    <true/>
+    <!-- Python+librosa caricano librerie native dinamicamente; senza questo
+         alcune .dylib di numpy/scikit non passano la library validation. -->
+    <key>com.apple.security.cs.disable-library-validation</key>
+    <true/>
+    <!-- Permette di scrivere file (timeline marker XML) accanto al video sorgente. -->
+    <key>com.apple.security.files.user-selected.read-write</key>
+    <true/>
+    <!-- Resolve scripting bridge via osascript opzionale. -->
+    <key>com.apple.security.automation.apple-events</key>
+    <true/>
+</dict>
+</plist>
