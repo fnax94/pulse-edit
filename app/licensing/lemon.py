@@ -1,12 +1,15 @@
 """Validazione licenza via AB Tools License Server."""
 
 import urllib.request
+import ssl
 import json
 import platform
 import hashlib
+import certifi
 from app.i18n import t
 
 LICENSE_SERVER = "https://license-server.abtools.workers.dev"
+_SSL_CTX = ssl.create_default_context(cafile=certifi.where())
 
 
 def _get_instance_id():
@@ -78,7 +81,7 @@ def _api_call(endpoint, payload):
         req.add_header("Content-Type", "application/json")
         req.add_header("User-Agent", "PulseEdit/1.0")
 
-        with urllib.request.urlopen(req, timeout=10) as resp:
+        with urllib.request.urlopen(req, timeout=10, context=_SSL_CTX) as resp:
             return json.loads(resp.read()), None
 
     except urllib.error.HTTPError as e:
