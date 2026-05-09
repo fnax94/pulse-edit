@@ -12,20 +12,39 @@ _SUBPROCESS_KWARGS = {"creationflags": 0x08000000} if _IS_WINDOWS else {}
 
 def get_ffmpeg_path():
     """Trova il path di ffmpeg (bundled o sistema)."""
+    import logging
+    _log = logging.getLogger("pulseedit")
     exe = "ffmpeg.exe" if _IS_WINDOWS else "ffmpeg"
+    candidates = []
 
     if hasattr(sys, '_MEIPASS'):
         for subdir in ["", "Resources", "Frameworks"]:
             bundled = os.path.join(sys._MEIPASS, subdir, exe) if subdir else os.path.join(sys._MEIPASS, exe)
+            candidates.append(bundled)
             if os.path.exists(bundled):
+                _log.info(f"ffmpeg found at _MEIPASS: {bundled}")
                 return bundled
+
     app_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(sys.executable))))
     for subdir in ["Contents/Resources", "Contents/Frameworks", "Contents/MacOS"]:
         bundled = os.path.join(app_dir, subdir, exe)
+        candidates.append(bundled)
         if os.path.exists(bundled):
+            _log.info(f"ffmpeg found at app_dir: {bundled}")
             return bundled
+
+    import shutil
+    which = shutil.which(exe)
+    if which:
+        _log.info(f"ffmpeg found via which: {which}")
+        return which
+
     if not _IS_WINDOWS and os.path.exists("/opt/homebrew/bin/ffmpeg"):
         return "/opt/homebrew/bin/ffmpeg"
+    if not _IS_WINDOWS and os.path.exists("/usr/local/bin/ffmpeg"):
+        return "/usr/local/bin/ffmpeg"
+
+    _log.error(f"ffmpeg NOT FOUND. Searched: {candidates}")
     return exe
 
 

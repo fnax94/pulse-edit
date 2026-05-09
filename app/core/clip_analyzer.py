@@ -8,22 +8,36 @@ import numpy as np
 
 def get_ffmpeg_path():
     """Trova il path di ffmpeg."""
-    import platform
+    import platform, shutil, logging
+    _log = logging.getLogger("pulseedit")
     is_win = platform.system() == "Windows"
     exe = "ffmpeg.exe" if is_win else "ffmpeg"
+    candidates = []
 
     if hasattr(sys, '_MEIPASS'):
         for subdir in ["", "Resources", "Frameworks"]:
             bundled = os.path.join(sys._MEIPASS, subdir, exe) if subdir else os.path.join(sys._MEIPASS, exe)
+            candidates.append(bundled)
             if os.path.exists(bundled):
                 return bundled
+
     app_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(sys.executable))))
     for subdir in ["Contents/Resources", "Contents/Frameworks", "Contents/MacOS"]:
         bundled = os.path.join(app_dir, subdir, exe)
+        candidates.append(bundled)
         if os.path.exists(bundled):
             return bundled
+
+    which = shutil.which(exe)
+    if which:
+        return which
+
     if not is_win and os.path.exists("/opt/homebrew/bin/ffmpeg"):
         return "/opt/homebrew/bin/ffmpeg"
+    if not is_win and os.path.exists("/usr/local/bin/ffmpeg"):
+        return "/usr/local/bin/ffmpeg"
+
+    _log.error(f"ffmpeg NOT FOUND. Searched: {candidates}")
     return exe
 
 
