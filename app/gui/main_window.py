@@ -1,10 +1,31 @@
 """Pulse Edit main window — tabbed layout: Detect Beats + Auto-Edit."""
 
 import os
+import sys
 import threading
 import logging
 import tempfile as _tempfile
 import platform as _platform
+
+# ─── App Translocation Guard (macOS) ───
+# macOS moves apps opened from Downloads/email to a random AppTranslocation path,
+# breaking bundled ffmpeg and fusionscript.so. Detect and warn BEFORE any UI loads.
+if _platform.system() == "Darwin" and hasattr(sys, '_MEIPASS') and 'AppTranslocation' in (sys.executable or ''):
+    import tkinter as _tk
+    import tkinter.messagebox as _mb
+    _root = _tk.Tk()
+    _root.withdraw()
+    _mb.showwarning(
+        "Move to Applications",
+        "Pulse Edit is running from a quarantined location.\n\n"
+        "Please:\n"
+        "1. Close this app\n"
+        "2. Move PulseEdit.app to your Applications folder\n"
+        "3. Open it from Applications\n\n"
+        "This is required by macOS for the app to work correctly."
+    )
+    _root.destroy()
+
 import customtkinter as ctk
 
 _log = logging.getLogger("pulseedit")

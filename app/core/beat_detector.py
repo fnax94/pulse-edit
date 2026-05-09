@@ -66,6 +66,13 @@ def extract_audio(file_path):
             cmd, capture_output=True, encoding="utf-8", errors="replace",
             timeout=120, **_SUBPROCESS_KWARGS
         )
+    except FileNotFoundError:
+        ffmpeg_path = get_ffmpeg_path()
+        raise RuntimeError(
+            f"ffmpeg not found at: {ffmpeg_path}\n\n"
+            "Please make sure PulseEdit.app is in your Applications folder.\n"
+            "If the problem persists, contact support at abramo.benedetti@gmail.com"
+        )
     except subprocess.TimeoutExpired:
         raise RuntimeError("ffmpeg timeout (file too large or unresponsive)")
     if result.returncode != 0:

@@ -383,6 +383,48 @@ def _is_resolve_running():
         return False
 
 
+def run_health_check():
+    """Startup health check — logs status of critical dependencies.
+
+    Returns dict with status of each check:
+        ffmpeg_ok: bool
+        ffmpeg_path: str
+        resolve_script_ok: bool
+        resolve_script_path: str
+    Called at boot to log state; NOT a dialog.
+    """
+    result = {
+        "ffmpeg_ok": False,
+        "ffmpeg_path": "",
+        "resolve_script_ok": False,
+        "resolve_script_path": "",
+    }
+
+    # Check ffmpeg
+    try:
+        from app.core.beat_detector import get_ffmpeg_path
+        ffmpeg_path = get_ffmpeg_path()
+        result["ffmpeg_path"] = ffmpeg_path
+        result["ffmpeg_ok"] = os.path.exists(ffmpeg_path)
+        _log.info(f"Health check — ffmpeg: {'OK' if result['ffmpeg_ok'] else 'NOT FOUND'} at {ffmpeg_path}")
+    except Exception as e:
+        _log.error(f"Health check — ffmpeg error: {e}")
+
+    # Check DaVinciResolveScript.py
+    search_paths = _MAC_MODULE_PATHS if _IS_MAC else (_WIN_MODULE_PATHS if _IS_WINDOWS else [])
+    for mp in search_paths:
+        dvr_path = os.path.join(mp, "DaVinciResolveScript.py")
+        if os.path.exists(dvr_path):
+            result["resolve_script_ok"] = True
+            result["resolve_script_path"] = dvr_path
+            break
+
+    _log.info(f"Health check — DaVinciResolveScript: {'OK' if result['resolve_script_ok'] else 'NOT FOUND'}"
+              f" at {result['resolve_script_path'] or '(none)'}")
+
+    return result
+
+
 def diagnose():
     """Returns a diagnostic string describing what was found/not found for Resolve scripting."""
     lines = [f"OS: {_platform.system()} {_platform.release()}"]
