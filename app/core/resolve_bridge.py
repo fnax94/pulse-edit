@@ -409,11 +409,101 @@ def diagnose():
         for p in _MAC_LIB_PATHS:
             exists = os.path.isdir(p)
             lines.append(f"  {'[OK]' if exists else '[--]'} {p}")
-    if _IS_WINDOWS:
-        import tempfile as _tf
-        lines.append(f"\nLog file: {os.path.join(_tf.gettempdir(), 'pulseedit_debug.log')}")
+    lines.append(f"\nApp version: 1.4.1")
+    lines.append(f"Python: {_platform.python_version()} ({_platform.machine()})")
+    lines.append(f"macOS: {_platform.mac_ver()[0] if hasattr(_platform, 'mac_ver') else 'N/A'}")
+    lines.append(f"Frozen: {getattr(sys, 'frozen', False)}")
+    lines.append(f"Executable: {sys.executable}")
+    if hasattr(sys, '_MEIPASS'):
+        lines.append(f"_MEIPASS: {sys._MEIPASS}")
+
+    lines.append(f"\n--- Environment ---")
+    lines.append(f"RESOLVE_SCRIPT_API: {os.environ.get('RESOLVE_SCRIPT_API', '(not set)')}")
+    lines.append(f"RESOLVE_SCRIPT_LIB: {os.environ.get('RESOLVE_SCRIPT_LIB', '(not set)')}")
+    lines.append(f"sys.path (resolve): {[p for p in sys.path if 'Resolve' in p or 'resolve' in p or 'Blackmagic' in p]}")
+
+    lines.append(f"\n--- fusionscript check ---")
+    fs_lib = os.environ.get('RESOLVE_SCRIPT_LIB', '')
+    if fs_lib and os.path.exists(fs_lib):
+        try:
+            import subprocess as _sp
+            _arch = _sp.check_output(["file", fs_lib], text=True, timeout=5).strip()
+            lines.append(f"fusionscript: {_arch}")
+        except Exception:
+            lines.append(f"fusionscript: exists at {fs_lib}")
     else:
-        lines.append("\nLog file: /tmp/pulseedit_debug.log")
+        for _fsp in ["/Applications/DaVinci Resolve/DaVinci Resolve.app/Contents/Libraries/Fusion/fusionscript.so",
+                     "/opt/resolve/libs/Fusion/fusionscript.so"]:
+            if os.path.exists(_fsp):
+                try:
+                    import subprocess as _sp
+                    _arch = _sp.check_output(["file", _fsp], text=True, timeout=5).strip()
+                    lines.append(f"fusionscript: {_arch}")
+                except Exception:
+                    lines.append(f"fusionscript: found at {_fsp}")
+                break
+        else:
+            lines.append("fusionscript: NOT FOUND")
+
+    lines.append(f"\n--- Entitlements self-check ---")
+    try:
+        import subprocess as _sp
+        _ent = _sp.check_output(["codesign", "-d", "--entitlements", "-", sys.executable], stderr=_sp.STDOUT, text=True, timeout=5)
+        if "disable-library-validation" in _ent:
+            lines.append("disable-library-validation: YES")
+        else:
+            lines.append("disable-library-validation: NO (may cause fusionscript load failure)")
+        if "allow-unsigned-executable-memory" in _ent:
+            lines.append("allow-unsigned-executable-memory: YES")
+    except Exception as _e:
+        lines.append(f"entitlements check: {_e}")
+
+    lines.append(f"\n--- Import test ---")
+    try:
+        import DaVinciResolveScript as _dvr_test
+        lines.append("DaVinciResolveScript: IMPORTED OK")
+        try:
+            _r = _dvr_test.scriptapp("Resolve")
+            if _r:
+                lines.append(f"scriptapp('Resolve'): CONNECTED")
+                try:
+                    lines.append(f"Resolve version: {_r.GetVersionString()}")
+                except Exception:
+                    pass
+            else:
+                lines.append(f"scriptapp('Resolve'): None")
+                lines.append("  → Open a project with a timeline in DaVinci Resolve Edit page")
+        except Exception as _e:
+            lines.append(f"scriptapp error: {type(_e).__name__}: {_e}")
+    except ImportError as _e:
+        lines.append(f"DaVinciResolveScript: IMPORT FAILED")
+        lines.append(f"  error: {_e}")
+        lines.append(f"  This usually means fusionscript.so cannot be loaded.")
+        lines.append(f"  Check: DaVinci Resolve Studio (not Free) is required.")
+    except Exception as _e:
+        lines.append(f"DaVinciResolveScript: ERROR — {type(_e).__name__}: {_e}")
+
+    lines.append(f"\n--- ffmpeg ---")
+    try:
+        from app.core.beat_detector import get_ffmpeg_path
+        _ffp = get_ffmpeg_path()
+        lines.append(f"path: {_ffp}")
+        lines.append(f"exists: {os.path.exists(_ffp)}")
+        if os.path.exists(_ffp):
+            try:
+                import subprocess as _sp
+                _ver = _sp.check_output([_ffp, "-version"], text=True, timeout=5).split('\n')[0]
+                lines.append(f"version: {_ver}")
+            except Exception as _e:
+                lines.append(f"exec test: FAILED — {_e}")
+        else:
+            lines.append("ffmpeg NOT FOUND in bundle — contact support")
+    except Exception as _e:
+        lines.append(f"ffmpeg error: {_e}")
+
+    log_path = os.path.expanduser("~/Library/Logs/PulseEdit/pulseedit.log") if not _IS_WINDOWS else os.path.join(os.environ.get("TEMP", ""), "pulseedit_debug.log")
+    lines.append(f"\nLog file: {log_path}")
+    lines.append("Send a screenshot of this dialog to support for troubleshooting.")
     return "\n".join(lines)
 
 

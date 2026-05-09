@@ -13,7 +13,13 @@ def get_ffmpeg_path():
     exe = "ffmpeg.exe" if is_win else "ffmpeg"
 
     if hasattr(sys, '_MEIPASS'):
-        bundled = os.path.join(sys._MEIPASS, exe)
+        for subdir in ["", "Resources", "Frameworks"]:
+            bundled = os.path.join(sys._MEIPASS, subdir, exe) if subdir else os.path.join(sys._MEIPASS, exe)
+            if os.path.exists(bundled):
+                return bundled
+    app_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(sys.executable))))
+    for subdir in ["Contents/Resources", "Contents/Frameworks", "Contents/MacOS"]:
+        bundled = os.path.join(app_dir, subdir, exe)
         if os.path.exists(bundled):
             return bundled
     if not is_win and os.path.exists("/opt/homebrew/bin/ffmpeg"):
