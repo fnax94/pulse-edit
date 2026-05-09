@@ -140,6 +140,17 @@ def detect_beats(file_path, sensitivity=0.5):
         if len(beats_list) < 2:
             return bpm, beats_list, [], []
 
+        # Estendi beat all'inizio dell'audio (intro senza batteria)
+        if len(beats_list) >= 2:
+            avg_interval = (beats_list[-1] - beats_list[0]) / (len(beats_list) - 1)
+            first_beat = beats_list[0]
+            prepend = []
+            while first_beat - avg_interval >= 0.05:
+                first_beat -= avg_interval
+                prepend.append(first_beat)
+            if prepend:
+                beats_list = list(reversed(prepend)) + beats_list
+
         # Estendi beat fino alla fine dell'audio (fade-out/coda)
         audio_duration = len(y) / sr
         if len(beats_list) >= 2:
