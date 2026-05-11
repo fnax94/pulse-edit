@@ -76,6 +76,15 @@ STRINGS = {
         "server_error": "Server error: {code}",
         "validation_error": "Validation error.",
         "activation_failed": "Activation failed.",
+        "deactivate_btn": "Deactivate",
+        "deactivate_confirm_title": "Deactivate License",
+        "deactivate_confirm_text": "This will release the license from this machine. You can then activate it on another machine. Continue?",
+        "deactivate_success_title": "Deactivated",
+        "deactivate_error_title": "Deactivation Failed",
+        "license_deactivated": "License deactivated. You can now activate it on another machine.",
+        "deactivation_failed": "Deactivation failed. Try again or contact support@pulseedit.com.",
+        "license_not_found": "No active license found on this machine.",
+        "deactivating": "Deactivating...",
         # Clip scan
         "scan_ok": "{count} clips ({fps} fps) — ready",
         # Cut patterns
@@ -238,6 +247,15 @@ STRINGS = {
         "server_error": "Errore server: {code}",
         "validation_error": "Errore di validazione.",
         "activation_failed": "Attivazione fallita.",
+        "deactivate_btn": "Disattiva",
+        "deactivate_confirm_title": "Disattiva Licenza",
+        "deactivate_confirm_text": "Questa azione libera la licenza da questa macchina. Potrai poi attivarla su un'altra macchina. Continuare?",
+        "deactivate_success_title": "Disattivata",
+        "deactivate_error_title": "Disattivazione Fallita",
+        "license_deactivated": "Licenza disattivata. Ora puoi attivarla su un'altra macchina.",
+        "deactivation_failed": "Disattivazione fallita. Riprova o contatta support@pulseedit.com.",
+        "license_not_found": "Nessuna licenza attiva trovata su questa macchina.",
+        "deactivating": "Disattivazione in corso...",
         # Clip scan
         "scan_ok": "{count} clip ({fps} fps) — pronte",
         # Cut patterns

@@ -11,3 +11,4 @@ dist/
 .pyarmor/
 pyarmor_runtime_*/
 *.zip
+resources/ffmpeg

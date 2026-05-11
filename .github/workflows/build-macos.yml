@@ -4,9 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       release_tag:
-        description: 'Release tag to upload to (e.g. pulse-edit-v1.4)'
+        description: 'Release tag to upload to (e.g. pulse-edit-v1.5)'
         required: true
-        default: 'pulse-edit-v1.4'
+        default: 'pulse-edit-v1.5'
 
 permissions:
   contents: write
@@ -28,6 +28,15 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install pyinstaller customtkinter librosa scipy soundfile numba soxr pillow scikit-learn requests
+
+      - name: Download static ffmpeg (arm64)
+        run: |
+          mkdir -p resources
+          curl -L -o ffmpeg.zip "https://www.osxexperts.net/ffmpeg711arm.zip"
+          unzip -o ffmpeg.zip -d resources/
+          chmod +x resources/ffmpeg
+          ls -la resources/ffmpeg
+          file resources/ffmpeg
 
       - name: Build with PyInstaller
         run: |

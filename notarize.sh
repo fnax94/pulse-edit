@@ -16,7 +16,7 @@ APP="dist/PulseEdit.app"
 ZIP="dist/PulseEdit-macOS.zip"
 IDENTITY="Developer ID Application: Abramo Benedetti (P4JYVWNR6H)"
 ENTITLEMENTS="entitlements.plist"
-KEYCHAIN_PROFILE="pulse-edit"
+KEYCHAIN_PROFILE="AC_PASSWORD"
 BUNDLE_ID="com.abtools.pulseedit"
 
 if [ ! -d "$APP" ]; then
@@ -27,10 +27,10 @@ fi
 echo "▶ Patching Info.plist (bundle ID + version)..."
 /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier $BUNDLE_ID" "$APP/Contents/Info.plist" 2>/dev/null \
   || /usr/libexec/PlistBuddy -c "Add :CFBundleIdentifier string $BUNDLE_ID" "$APP/Contents/Info.plist"
-/usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString 1.2" "$APP/Contents/Info.plist" 2>/dev/null \
-  || /usr/libexec/PlistBuddy -c "Add :CFBundleShortVersionString string 1.2" "$APP/Contents/Info.plist"
-/usr/libexec/PlistBuddy -c "Set :CFBundleVersion 1.2" "$APP/Contents/Info.plist" 2>/dev/null \
-  || /usr/libexec/PlistBuddy -c "Add :CFBundleVersion string 1.2" "$APP/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString 1.4.3" "$APP/Contents/Info.plist" 2>/dev/null \
+  || /usr/libexec/PlistBuddy -c "Add :CFBundleShortVersionString string 1.4.3" "$APP/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Set :CFBundleVersion 1.4.3" "$APP/Contents/Info.plist" 2>/dev/null \
+  || /usr/libexec/PlistBuddy -c "Add :CFBundleVersion string 1.4.3" "$APP/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :NSHumanReadableCopyright 'Copyright © 2026 Abramo Benedetti'" "$APP/Contents/Info.plist" 2>/dev/null \
   || /usr/libexec/PlistBuddy -c "Add :NSHumanReadableCopyright string 'Copyright © 2026 Abramo Benedetti'" "$APP/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :NSMicrophoneUsageDescription 'Pulse Edit analizza file audio per generare beat markers.'" "$APP/Contents/Info.plist" 2>/dev/null \

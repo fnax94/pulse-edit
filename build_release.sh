@@ -5,6 +5,15 @@
 cd "$(dirname "$0")"
 source venv/bin/activate
 
+echo "=== Pre-build check: ffmpeg must be statically linked ==="
+if otool -L resources/ffmpeg 2>/dev/null | grep -qi homebrew; then
+  echo "✗ resources/ffmpeg is dynamic-linked to Homebrew dylibs!" >&2
+  echo "  This breaks the app on any Mac without Homebrew + matching ffmpeg." >&2
+  echo "  Replace resources/ffmpeg with a static binary (e.g. from osxexperts.net)." >&2
+  echo "  Aborting build." >&2
+  exit 1
+fi
+
 echo "=== Build app con PyInstaller ==="
 rm -rf build dist
 

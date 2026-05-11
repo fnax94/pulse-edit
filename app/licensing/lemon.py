@@ -69,6 +69,25 @@ def validate_license(license_key):
     return False, result.get("error", t("license_invalid"))
 
 
+def deactivate_license(license_key):
+    """Deattiva la licenza sul server, libera la macchina. Ritorna (success, message)."""
+    key = license_key.strip()
+    machine_id = _get_instance_id()
+
+    result, error = _api_call("/deactivate", {
+        "license_key": key,
+        "machine_id": machine_id,
+    })
+
+    if error:
+        return False, error
+
+    if result.get("deactivated"):
+        return True, t("license_deactivated")
+
+    return False, result.get("error", t("deactivation_failed"))
+
+
 def _api_call(endpoint, payload):
     """Chiama il license server. Ritorna (result_dict, error_string)."""
     try:

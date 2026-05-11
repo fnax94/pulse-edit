@@ -652,8 +652,10 @@ class MainWindow(ctk.CTk):
 
     def _update_trial_label(self):
         if self.licensed:
-            self.trial_label.configure(text=t("licensed"), text_color="green",
-                                        cursor="arrow")
+            self.trial_label.configure(
+                text=t("licensed") + "  [" + t("deactivate_btn") + "]",
+                text_color="green", cursor="hand2"
+            )
         else:
             remaining = storage.trial_remaining()
             if remaining > 0:
@@ -668,8 +670,37 @@ class MainWindow(ctk.CTk):
                 )
 
     def _on_trial_click(self):
-        if not self.licensed:
+        if self.licensed:
+            self._deactivate_license()
+        else:
             self._show_license_dialog()
+
+    def _deactivate_license(self):
+        """Confirm + deactivate license on the server, remove from local storage."""
+        from tkinter import messagebox
+        from app.licensing import lemon as _lemon
+
+        if not messagebox.askyesno(t("deactivate_confirm_title"),
+                                    t("deactivate_confirm_text")):
+            return
+
+        key = storage.load_license()
+        if not key:
+            messagebox.showerror(t("deactivate_error_title"), t("license_not_found"))
+            return
+
+        self.trial_label.configure(text=t("deactivating"), text_color="gray")
+        self.update_idletasks()
+
+        ok, msg = _lemon.deactivate_license(key)
+        if ok:
+            storage.remove_license()
+            self.licensed = False
+            messagebox.showinfo(t("deactivate_success_title"), msg)
+        else:
+            messagebox.showerror(t("deactivate_error_title"), msg)
+
+        self._update_trial_label()
 
     def _check_trial_or_license(self):
         if self.licensed:
