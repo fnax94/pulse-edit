@@ -265,3 +265,29 @@ jobs:
         run: |
           gh release upload pulse-edit-v1.5 PulseEdit-Windows.zip --clobber
           gh release upload pulse-edit-v1.5 PulseEdit-Setup.exe --clobber
+
+      - name: Mirror Windows build to R2 (public download)
+        # Uploads as PulseEdit-Studio-Setup.exe / PulseEdit-Studio-Windows.zip
+        # (the "Studio-" prefix distinguishes from the standalone Pulse Edit
+        # free build in the shared pulseedit-releases bucket). The mirror
+        # Worker strips the prefix in Content-Disposition so users see the
+        # friendly download name.
+        if: ${{ env.R2_ACCESS_KEY_ID != '' }}
+        shell: pwsh
+        env:
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+        run: |
+          $env:AWS_ACCESS_KEY_ID = $env:R2_ACCESS_KEY_ID
+          $env:AWS_SECRET_ACCESS_KEY = $env:R2_SECRET_ACCESS_KEY
+          $env:AWS_DEFAULT_REGION = "auto"
+          $endpoint = "https://$env:R2_ACCOUNT_ID.r2.cloudflarestorage.com"
+          aws s3 cp PulseEdit-Setup.exe `
+            "s3://pulseedit-releases/PulseEdit-Studio-Setup.exe" `
+            --endpoint-url $endpoint `
+            --content-type "application/x-msdownload"
+          aws s3 cp PulseEdit-Windows.zip `
+            "s3://pulseedit-releases/PulseEdit-Studio-Windows.zip" `
+            --endpoint-url $endpoint `
+            --content-type "application/zip"
