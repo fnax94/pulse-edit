@@ -286,6 +286,9 @@ jobs:
           TAG: ${{ steps.tag.outputs.tag }}
         shell: bash
         run: |
+          VERSION="${TAG#pulse-edit-v}"
+          gh release view "$TAG" >/dev/null 2>&1 || \
+            gh release create "$TAG" --title "Pulse Edit Studio v${VERSION}" --notes "Pulse Edit Studio v${VERSION} — macOS + Windows builds."
           gh release upload "$TAG" PulseEdit-Windows.zip --clobber
           gh release upload "$TAG" PulseEdit-Setup.exe --clobber
 
