@@ -131,12 +131,35 @@ jobs:
           rm -f "$ZIP"
           ditto -c -k --keepParent "$APP" "$ZIP"
 
+      - name: Build DMG (signed)
+        env:
+          IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+        run: |
+          brew install create-dmg
+          APP="dist/PulseEdit.app"
+          DMG="dist/PulseEdit-macOS.dmg"
+          rm -f "$DMG"
+          create-dmg \
+            --volname "Pulse Edit" \
+            --window-pos 200 120 \
+            --window-size 640 400 \
+            --icon-size 128 \
+            --icon "PulseEdit.app" 160 200 \
+            --hide-extension "PulseEdit.app" \
+            --app-drop-link 480 200 \
+            --no-internet-enable \
+            "$DMG" \
+            "$APP"
+          codesign --force --sign "$IDENTITY" --timestamp "$DMG"
+          ls -la "$DMG"
+
       - name: Upload to GitHub release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ github.event.inputs.release_tag }}
         run: |
           gh release upload "$TAG" dist/PulseEdit-macOS.zip --clobber
+          gh release upload "$TAG" dist/PulseEdit-macOS.dmg --clobber
 
       - name: Mirror macOS build to R2 (public download)
         # Uploads as PulseEdit-Studio-macOS.zip (the "Studio-" prefix
