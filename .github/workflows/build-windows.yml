@@ -2,6 +2,11 @@ name: Build Windows
 
 on:
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Release tag to upload to (default: latest pulse-edit-v* release)'
+        required: false
+        default: ''
   push:
     branches: [main]
     paths:
@@ -259,12 +264,30 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "ISCC failed with $LASTEXITCODE" }
           Get-ChildItem PulseEdit-Setup.exe | Select-Object Name, Length
 
+      - name: Resolve release tag
+        id: tag
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          INPUT_TAG: ${{ github.event.inputs.release_tag }}
+        shell: bash
+        run: |
+          if [ -n "$INPUT_TAG" ]; then
+            TAG="$INPUT_TAG"
+          else
+            # Latest pulse-edit-v* release (most recent, includes prereleases)
+            TAG=$(gh release list --repo "$GITHUB_REPOSITORY" --limit 20 --json tagName --jq '[.[] | select(.tagName | startswith("pulse-edit-v"))][0].tagName')
+          fi
+          echo "Using release tag: $TAG"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
       - name: Upload to release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.tag.outputs.tag }}
+        shell: bash
         run: |
-          gh release upload pulse-edit-v1.5 PulseEdit-Windows.zip --clobber
-          gh release upload pulse-edit-v1.5 PulseEdit-Setup.exe --clobber
+          gh release upload "$TAG" PulseEdit-Windows.zip --clobber
+          gh release upload "$TAG" PulseEdit-Setup.exe --clobber
 
       - name: Mirror Windows build to R2 (public download)
         # Uploads as PulseEdit-Studio-Setup.exe / PulseEdit-Studio-Windows.zip
