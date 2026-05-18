@@ -486,18 +486,24 @@ class MainWindow(ctk.CTk):
         if self.video_track_map:
             labels = list(self.video_track_map.keys())
             self.vtrack_combo.configure(values=labels)
-            self.vtrack_combo.set(labels[0])
+            prev_vt = self.vtrack_combo.get() if hasattr(self, 'vtrack_combo') else ''
+            self.vtrack_combo.set(prev_vt if prev_vt in labels else labels[0])
         else:
             self.vtrack_combo.configure(values=[t("no_video_tracks")])
             self.vtrack_combo.set(t("no_video_tracks"))
 
-        # Media Pool folders
+        # Media Pool folders — bug fix v1.5.1 (@appex00): _connect_resolve() is
+        # also called from _auto_edit/_ai_auto_edit before reading folder_combo,
+        # so resetting to names[0] (= "Root") was overriding the user's choice
+        # and the auto-edit always ran on root folder. Preserve user selection.
         self.folder_map = resolve_bridge.get_media_pool_folders(self.resolve)
         if self.folder_map:
             names = list(self.folder_map.keys())
             self.folder_combo.configure(values=names)
-            self.folder_combo.set(names[0])
-            self._on_folder_changed(names[0])
+            prev_folder = self.folder_combo.get() if hasattr(self, 'folder_combo') else ''
+            current = prev_folder if prev_folder in names else names[0]
+            self.folder_combo.set(current)
+            self._on_folder_changed(current)
 
     def _show_diagnostics(self):
         import tkinter as tk
