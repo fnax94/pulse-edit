@@ -17,31 +17,62 @@ fi
 echo "=== Build app con PyInstaller ==="
 rm -rf build dist
 
+# Pre-fetch beat_this DNN checkpoint (offline-ready bundle)
+# torch.hub looks under $TORCH_HOME/hub/checkpoints/ so we mirror the full
+# hub/ subtree (not just checkpoints/) to keep beat_this offline-loadable.
+echo "▶ Pre-downloading beat_this 'final0' checkpoint..."
+python -c "from beat_this.inference import File2Beats; File2Beats(checkpoint_path='final0', dbn=False)" || {
+  echo "⚠ beat_this not installed in venv — install with: pip install beat_this torch torchaudio"
+  exit 1
+}
+rm -rf model_cache
+mkdir -p model_cache
+if [ -d "$HOME/.cache/torch/hub" ]; then
+  cp -r "$HOME/.cache/torch/hub" model_cache/
+  echo "▶ Bundled checkpoint(s):"
+  find model_cache -name "*.ckpt" -o -name "*.pt" -o -name "*.pth" 2>/dev/null
+else
+  echo "✗ ~/.cache/torch/hub not found — beat_this checkpoint missing!" >&2
+  exit 1
+fi
+
 pyinstaller --name "PulseEdit" \
     --windowed \
     --noconfirm \
+    --clean \
     --icon resources/icon.icns \
     --collect-all customtkinter \
+    --collect-all librosa \
+    --collect-all certifi \
+    --collect-all beat_this \
+    --collect-all torch \
+    --collect-all torchaudio \
+    --collect-all numba \
+    --collect-all llvmlite \
+    --collect-all sklearn \
     --add-binary "resources/ffmpeg:." \
-    --hidden-import librosa \
-    --hidden-import librosa.util \
-    --hidden-import librosa.filters \
-    --hidden-import librosa.feature \
-    --hidden-import librosa.beat \
-    --hidden-import librosa.onset \
-    --hidden-import librosa.core \
+    --add-data "app/__version__.py:app" \
+    --add-data "model_cache:model_cache" \
     --hidden-import scipy.signal \
     --hidden-import scipy.fft \
+    --hidden-import scipy.ndimage \
     --hidden-import soundfile \
-    --hidden-import numba \
     --hidden-import soxr \
     --hidden-import numpy \
+    --hidden-import lazy_loader \
+    --hidden-import audioread \
+    --hidden-import pooch \
+    --hidden-import decorator \
+    --hidden-import joblib \
+    --hidden-import cffi \
+    --hidden-import msgpack \
     --hidden-import app \
+    --hidden-import app.__version__ \
     --hidden-import app.i18n \
     --hidden-import app.core \
     --hidden-import app.core.resolve_bridge \
+    --hidden-import app.core.resolve_worker \
     --hidden-import app.core.beat_detector \
-    --hidden-import app.core.clip_analyzer \
     --hidden-import app.core.editor \
     --hidden-import app.core.mood_analyzer \
     --hidden-import app.gui \

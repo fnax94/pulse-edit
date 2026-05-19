@@ -1,4 +1,4 @@
-"""Beat detection usando librosa."""
+"""Beat detection: beat_this DNN (ISMIR 2024) primario + librosa fallback."""
 
 import subprocess
 import tempfile
@@ -8,6 +8,13 @@ import platform
 
 _IS_WINDOWS = platform.system() == "Windows"
 _SUBPROCESS_KWARGS = {"creationflags": 0x08000000} if _IS_WINDOWS else {}
+
+# When frozen by PyInstaller, point torch hub cache to bundled checkpoints
+# so beat_this loads 'final0' offline without HF/torch.hub download.
+if hasattr(sys, '_MEIPASS'):
+    _bundled_cache = os.path.join(sys._MEIPASS, "model_cache")
+    if os.path.isdir(_bundled_cache):
+        os.environ.setdefault("TORCH_HOME", _bundled_cache)
 
 
 def get_ffmpeg_path():
@@ -131,10 +138,54 @@ def compute_subdivisions(bar_times, mode="quarter", all_beats=None):
     return subdivisions
 
 
-def detect_beats(file_path, sensitivity=0.5):
-    """Rileva i beat. Ritorna (bpm, beat_times_array).
+def _detect_beats_dnn(wav_path):
+    """Beat detection via beat_this (ISMIR 2024 DNN transformer).
+    Ritorna (beats_list, downbeats_list) o None se modulo non disponibile/errore.
+    """
+    try:
+        from beat_this.inference import File2Beats
+    except Exception:
+        return None
+    try:
+        b2b = File2Beats(checkpoint_path="final0", dbn=False)
+        beats_arr, downbeats_arr = b2b(wav_path)
+        beats_list = [float(b) for b in beats_arr]
+        downbeats_list = [float(b) for b in downbeats_arr]
+        if len(beats_list) < 2:
+            return None
+        return beats_list, downbeats_list
+    except Exception:
+        return None
 
-    sensitivity: 0.0 (pochi beat) -> 1.0 (molti beat)
+
+def _refine_beats_linreg(beats_list, audio_duration):
+    """Linear regression sui beats: slope = beat_interval esatto, intercept = first_beat.
+    Genera griglia uniforme estesa fino alla fine audio. Riduce drift cumulativo.
+    """
+    if len(beats_list) < 4:
+        return beats_list
+    import numpy as np
+    indices = np.arange(len(beats_list))
+    slope, intercept = np.polyfit(indices, beats_list, 1)
+    beat_interval_s = float(slope)
+    first_beat_fit = float(intercept)
+    if beat_interval_s <= 0:
+        return beats_list
+    # Estendi indietro a 0 (intro senza batteria)
+    first = first_beat_fit
+    while first - beat_interval_s >= 0.05:
+        first -= beat_interval_s
+    # Estendi fino a fine audio
+    num_beats = int((audio_duration - first) / beat_interval_s) + 1
+    return [first + i * beat_interval_s for i in range(num_beats)]
+
+
+def detect_beats(file_path, sensitivity=0.5):
+    """Rileva i beat. Ritorna (bpm, beat_times, upbeats, energy_per_beat).
+
+    Tenta beat_this (DNN ISMIR 2024) come algoritmo primario; ricade su
+    librosa.beat.beat_track se il modulo non e' disponibile o fallisce.
+    sensitivity: 0.0 (pochi beat) -> 1.0 (molti beat). Usata solo nel fallback librosa.
     """
     import librosa
 
@@ -146,28 +197,47 @@ def detect_beats(file_path, sensitivity=0.5):
         if len(y) < sr:  # meno di 1 secondo
             raise RuntimeError("Audio too short (< 1 second)")
 
-        tempo, beat_frames = librosa.beat.beat_track(
-            y=y, sr=sr,
-            tightness=100 * (1 - sensitivity) + 10,
-            units="frames"
-        )
+        audio_duration = len(y) / sr
+        dnn_result = _detect_beats_dnn(wav_path)
 
-        beat_times = librosa.frames_to_time(beat_frames, sr=sr)
-
-        # BPM: gestisci array o scalare, con fallback
-        if hasattr(tempo, '__len__') and len(tempo) > 0:
-            bpm = float(tempo[0])
-        elif not hasattr(tempo, '__len__'):
-            bpm = float(tempo)
+        if dnn_result is not None:
+            beats_list, dnn_downbeats = dnn_result
+            # Linear regression refinement (BPM esatto, no drift cumulativo)
+            beats_list = _refine_beats_linreg(beats_list, audio_duration)
+            import numpy as np
+            if len(beats_list) >= 2:
+                bpm = 60.0 / float(np.median(np.diff(beats_list)))
+            else:
+                bpm = 120.0
+            # Downbeat: usa i downbeats della DNN come ancora, poi ogni 4 beat
+            if dnn_downbeats and len(beats_list) >= 4:
+                # Allinea al primo downbeat DNN ricomputato sulla griglia raffinata
+                first_db = dnn_downbeats[0]
+                # Trova l'indice del beat piu' vicino al first downbeat
+                start_idx = min(range(len(beats_list)),
+                                key=lambda i: abs(beats_list[i] - first_db))
+                upbeats = [beats_list[i] for i in range(start_idx, len(beats_list), 4)]
+            else:
+                bar_times = compute_bar_times(beats_list, 4)
+                upbeats = compute_subdivisions(bar_times, "quarter", all_beats=beats_list)
         else:
-            bpm = 120.0
-
-        beats_list = [float(t) for t in beat_times]
-        if len(beats_list) < 2:
-            return bpm, beats_list, [], []
-
-        # Estendi beat all'inizio dell'audio (intro senza batteria)
-        if len(beats_list) >= 2:
+            # Fallback librosa
+            tempo, beat_frames = librosa.beat.beat_track(
+                y=y, sr=sr,
+                tightness=100 * (1 - sensitivity) + 10,
+                units="frames"
+            )
+            beat_times = librosa.frames_to_time(beat_frames, sr=sr)
+            if hasattr(tempo, '__len__') and len(tempo) > 0:
+                bpm = float(tempo[0])
+            elif not hasattr(tempo, '__len__'):
+                bpm = float(tempo)
+            else:
+                bpm = 120.0
+            beats_list = [float(t) for t in beat_times]
+            if len(beats_list) < 2:
+                return bpm, beats_list, [], []
+            # Estendi beat all'inizio
             avg_interval = (beats_list[-1] - beats_list[0]) / (len(beats_list) - 1)
             first_beat = beats_list[0]
             prepend = []
@@ -176,19 +246,15 @@ def detect_beats(file_path, sensitivity=0.5):
                 prepend.append(first_beat)
             if prepend:
                 beats_list = list(reversed(prepend)) + beats_list
-
-        # Estendi beat fino alla fine dell'audio (fade-out/coda)
-        audio_duration = len(y) / sr
-        if len(beats_list) >= 2:
+            # Estendi fino alla fine
             avg_interval = (beats_list[-1] - beats_list[0]) / (len(beats_list) - 1)
             last_beat = beats_list[-1]
             while last_beat + avg_interval < audio_duration - 0.1:
                 last_beat += avg_interval
                 beats_list.append(last_beat)
-
-        # Upbeat default: quartinato (beat 2,3,4 della battuta)
-        bar_times = compute_bar_times(beats_list, 4)
-        upbeats = compute_subdivisions(bar_times, "quarter", all_beats=beats_list)
+            # Upbeats quartinati
+            bar_times = compute_bar_times(beats_list, 4)
+            upbeats = compute_subdivisions(bar_times, "quarter", all_beats=beats_list)
 
         # ── Analisi musicale multi-feature per Energy Map ──
         import numpy as np

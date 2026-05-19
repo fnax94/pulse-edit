@@ -451,7 +451,11 @@ def diagnose():
         for p in _MAC_LIB_PATHS:
             exists = os.path.isdir(p)
             lines.append(f"  {'[OK]' if exists else '[--]'} {p}")
-    lines.append(f"\nApp version: 1.4.1")
+    try:
+        from app.__version__ import __version__ as _app_ver
+    except Exception:
+        _app_ver = "unknown"
+    lines.append(f"\nApp version: {_app_ver}")
     lines.append(f"Python: {_platform.python_version()} ({_platform.machine()})")
     lines.append(f"macOS: {_platform.mac_ver()[0] if hasattr(_platform, 'mac_ver') else 'N/A'}")
     lines.append(f"Frozen: {getattr(sys, 'frozen', False)}")
@@ -741,7 +745,7 @@ def _proxy_send(cmd, **args):
     gracefully (e.g. get_audio_tracks returns {})."""
     if _worker_proxy is None:
         return {"ok": False, "error": "worker_not_initialized"}
-    return _proxy_send(cmd, **args)
+    return _worker_proxy._send(cmd, **args)
 
 
 def _start_subprocess_worker():

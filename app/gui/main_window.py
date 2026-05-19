@@ -37,7 +37,7 @@ else:
 _fh = logging.FileHandler(_log_path, mode="w")
 _fh.setFormatter(logging.Formatter("%(asctime)s %(message)s"))
 _log.addHandler(_fh)
-from app.core import resolve_bridge, beat_detector, clip_analyzer, editor, mood_analyzer
+from app.core import resolve_bridge, beat_detector, editor, mood_analyzer
 from app.licensing import storage
 from app.gui.license_dialog import LicenseDialog
 from app.i18n import t, set_language, get_language, available_languages
@@ -1012,7 +1012,7 @@ class MainWindow(ctk.CTk):
                     mood_key, confidence, scores, intensity=ai_intensity)
                 # Label dal mood originale (non dal blend)
                 orig = mood_analyzer.get_mood_preset(mood_key)
-                lang = __import__('app.i18n', fromlist=['get_language']).get_language()
+                lang = get_language()
                 mood_label = orig[f"label_{lang}"] if f"label_{lang}" in orig else orig["label_en"]
                 conf_pct = int(confidence * 100)
 

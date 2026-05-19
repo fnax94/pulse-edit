@@ -18,19 +18,20 @@ IDENTITY="Developer ID Application: Abramo Benedetti (P4JYVWNR6H)"
 ENTITLEMENTS="entitlements.plist"
 KEYCHAIN_PROFILE="AC_PASSWORD"
 BUNDLE_ID="com.abtools.pulseedit"
+VERSION=$(python3 -c "import re; m=re.search(r'__version__\s*=\s*[\"\']([^\"\']+)[\"\']', open('app/__version__.py').read()); print(m.group(1))" 2>/dev/null || echo "0.0.0")
 
 if [ ! -d "$APP" ]; then
   echo "✗ $APP not found. Run ./build.sh first." >&2
   exit 1
 fi
 
-echo "▶ Patching Info.plist (bundle ID + version)..."
+echo "▶ Patching Info.plist (bundle ID + version $VERSION)..."
 /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier $BUNDLE_ID" "$APP/Contents/Info.plist" 2>/dev/null \
   || /usr/libexec/PlistBuddy -c "Add :CFBundleIdentifier string $BUNDLE_ID" "$APP/Contents/Info.plist"
-/usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString 1.5.1" "$APP/Contents/Info.plist" 2>/dev/null \
-  || /usr/libexec/PlistBuddy -c "Add :CFBundleShortVersionString string 1.5.1" "$APP/Contents/Info.plist"
-/usr/libexec/PlistBuddy -c "Set :CFBundleVersion 1.5.1" "$APP/Contents/Info.plist" 2>/dev/null \
-  || /usr/libexec/PlistBuddy -c "Add :CFBundleVersion string 1.5.1" "$APP/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VERSION" "$APP/Contents/Info.plist" 2>/dev/null \
+  || /usr/libexec/PlistBuddy -c "Add :CFBundleShortVersionString string $VERSION" "$APP/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Set :CFBundleVersion $VERSION" "$APP/Contents/Info.plist" 2>/dev/null \
+  || /usr/libexec/PlistBuddy -c "Add :CFBundleVersion string $VERSION" "$APP/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :NSHumanReadableCopyright 'Copyright © 2026 Abramo Benedetti'" "$APP/Contents/Info.plist" 2>/dev/null \
   || /usr/libexec/PlistBuddy -c "Add :NSHumanReadableCopyright string 'Copyright © 2026 Abramo Benedetti'" "$APP/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :NSMicrophoneUsageDescription 'Pulse Edit analizza file audio per generare beat markers.'" "$APP/Contents/Info.plist" 2>/dev/null \

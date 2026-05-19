@@ -7,7 +7,7 @@
 set -e
 cd "$(dirname "$0")"
 
-VERSION="${1:-1.5.0}"
+VERSION="${1:-$(python3 -c "import re; m=re.search(r'__version__\s*=\s*[\"\']([^\"\']+)[\"\']', open('app/__version__.py').read()); print(m.group(1))" 2>/dev/null || echo "0.0.0")}"
 APP="dist/PulseEdit.app"
 DMG="dist/PulseEdit-v${VERSION}-macOS.dmg"
 IDENTITY="Developer ID Application: Abramo Benedetti (P4JYVWNR6H)"

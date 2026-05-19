@@ -27,7 +27,10 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install pyinstaller customtkinter librosa scipy soundfile numba soxr pillow scikit-learn requests
+          pip install pyinstaller customtkinter librosa scipy soundfile numba soxr pillow scikit-learn requests certifi
+          # beat_this DNN beat detection (ISMIR 2024) + torch CPU build
+          pip install torch torchaudio --extra-index-url https://download.pytorch.org/whl/cpu
+          pip install beat_this
 
       - name: Download static ffmpeg (arm64)
         run: |
@@ -38,35 +41,54 @@ jobs:
           ls -la resources/ffmpeg
           file resources/ffmpeg
 
+      - name: Pre-download beat_this 'final0' checkpoint
+        run: |
+          python -c "from beat_this.inference import File2Beats; File2Beats(checkpoint_path='final0', dbn=False)"
+          rm -rf model_cache
+          mkdir -p model_cache
+          if [ ! -d "$HOME/.cache/torch/hub" ]; then
+            echo "::error::~/.cache/torch/hub not produced — beat_this checkpoint missing"
+            exit 1
+          fi
+          # Mirror torch hub layout so $TORCH_HOME/hub/checkpoints/*.ckpt resolves at runtime.
+          cp -r "$HOME/.cache/torch/hub" model_cache/
+          echo "Bundled checkpoint(s):"
+          find model_cache -name "*.ckpt" -o -name "*.pt" -o -name "*.pth"
+
       - name: Build with PyInstaller
         run: |
           pyinstaller --name "PulseEdit" \
-            --windowed --noconfirm \
+            --windowed --noconfirm --clean \
             --icon resources/icon.icns \
             --collect-all customtkinter \
+            --collect-all librosa \
+            --collect-all certifi \
+            --collect-all beat_this \
+            --collect-all torch \
+            --collect-all torchaudio \
+            --collect-all numba \
+            --collect-all llvmlite \
+            --collect-all sklearn \
             --add-binary "resources/ffmpeg:." \
-            --hidden-import librosa \
-            --hidden-import librosa.util \
-            --hidden-import librosa.filters \
-            --hidden-import librosa.feature \
-            --hidden-import librosa.beat \
-            --hidden-import librosa.onset \
-            --hidden-import librosa.core \
+            --add-data "app/__version__.py:app" \
+            --add-data "model_cache:model_cache" \
             --hidden-import scipy.signal \
             --hidden-import scipy.fft \
             --hidden-import scipy.ndimage \
             --hidden-import soundfile \
-            --hidden-import sklearn.utils._cython_blas \
-            --hidden-import sklearn.neighbors.typedefs \
-            --hidden-import sklearn.neighbors._partition_nodes \
-            --hidden-import sklearn.tree._utils \
-            --hidden-import numba \
             --hidden-import soxr \
             --hidden-import numpy \
-            --hidden-import app.core.clip_analyzer \
+            --hidden-import lazy_loader \
+            --hidden-import audioread \
+            --hidden-import pooch \
+            --hidden-import decorator \
+            --hidden-import joblib \
+            --hidden-import cffi \
+            --hidden-import msgpack \
+            --hidden-import app.__version__ \
+            --hidden-import app.core.resolve_worker \
             --hidden-import app.core.editor \
             --hidden-import app.core.mood_analyzer \
-            --hidden-import app.core.custom_patterns \
             main.py
 
       - name: Import Developer ID certificate
@@ -170,7 +192,7 @@ jobs:
         # free build in the shared pulseedit-releases bucket). The mirror
         # Worker strips the prefix in the Content-Disposition header so
         # downloaded files keep the friendly name "PulseEdit-macOS.zip".
-        if: ${{ env.R2_ACCESS_KEY_ID != '' }}
+        if: ${{ secrets.R2_ACCESS_KEY_ID != '' }}
         env:
           R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}

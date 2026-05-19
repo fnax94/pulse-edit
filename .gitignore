@@ -12,3 +12,6 @@ dist/
 pyarmor_runtime_*/
 *.zip
 resources/ffmpeg
+resources/ffmpeg.OLD-*
+model_cache/
+.wrangler/
