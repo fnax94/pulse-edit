@@ -35,6 +35,10 @@ jobs:
           pip install pyinstaller customtkinter librosa scipy soundfile numba soxr pillow scikit-learn requests certifi
           # beat_this DNN beat detection (ISMIR 2024) + torch CPU build
           pip install torch torchaudio --extra-index-url https://download.pytorch.org/whl/cpu
+          # beat_this runtime deps that are NOT auto-installed by pip install beat_this:
+          # einops + rotary_embedding_torch are required by File2Beats. Without these
+          # the DNN silently fails and the app falls back to librosa.
+          pip install einops rotary_embedding_torch
           pip install beat_this
 
       - name: Download static ffmpeg (arm64)
@@ -69,6 +73,8 @@ jobs:
             --collect-all librosa \
             --collect-all certifi \
             --collect-all beat_this \
+            --collect-all einops \
+            --collect-all rotary_embedding_torch \
             --collect-all torch \
             --collect-all torchaudio \
             --collect-all numba \

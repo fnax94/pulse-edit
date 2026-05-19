@@ -45,6 +45,8 @@ pyinstaller --name "PulseEdit" \
     --collect-all librosa \
     --collect-all certifi \
     --collect-all beat_this \
+    --collect-all einops \
+    --collect-all rotary_embedding_torch \
     --collect-all torch \
     --collect-all torchaudio \
     --collect-all numba \

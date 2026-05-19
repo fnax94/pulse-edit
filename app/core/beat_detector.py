@@ -141,20 +141,35 @@ def compute_subdivisions(bar_times, mode="quarter", all_beats=None):
 def _detect_beats_dnn(wav_path):
     """Beat detection via beat_this (ISMIR 2024 DNN transformer).
     Ritorna (beats_list, downbeats_list) o None se modulo non disponibile/errore.
+
+    Loggato a livello WARNING per ogni failure mode così non si verifica più
+    il silent-fallback a librosa (caso v1.5.2: einops + rotary_embedding_torch
+    mancanti dal bundle → import OK ma instantiation fallisce silenziosamente).
     """
+    import logging
+    _log = logging.getLogger("pulseedit")
     try:
         from beat_this.inference import File2Beats
-    except Exception:
+    except Exception as e:
+        _log.warning(f"beat_this DNN unavailable (import failed: {type(e).__name__}: {e}) — falling back to librosa")
         return None
     try:
         b2b = File2Beats(checkpoint_path="final0", dbn=False)
+    except Exception as e:
+        _log.warning(f"beat_this DNN init failed ({type(e).__name__}: {e}) — falling back to librosa. "
+                     f"TORCH_HOME={os.environ.get('TORCH_HOME', '(unset)')}")
+        return None
+    try:
         beats_arr, downbeats_arr = b2b(wav_path)
         beats_list = [float(b) for b in beats_arr]
         downbeats_list = [float(b) for b in downbeats_arr]
         if len(beats_list) < 2:
+            _log.warning(f"beat_this DNN returned only {len(beats_list)} beats — falling back to librosa")
             return None
+        _log.info(f"beat_this DNN inference OK: {len(beats_list)} beats, {len(downbeats_list)} downbeats")
         return beats_list, downbeats_list
-    except Exception:
+    except Exception as e:
+        _log.warning(f"beat_this DNN inference failed ({type(e).__name__}: {e}) — falling back to librosa")
         return None
 
 
