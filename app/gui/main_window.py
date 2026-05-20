@@ -1357,6 +1357,16 @@ class MainWindow(ctk.CTk):
 
             self._edit_running = False
             self.after(0, lambda: self._set_busy(False, msg))
+            try:
+                from app import telemetry
+                telemetry.report_event("workflow_success", {
+                    "kind": "auto_edit",
+                    "clips_placed": placed_count,
+                    "beats_used": beats_used,
+                    "fps": str(fps),
+                })
+            except Exception:
+                pass
 
         except Exception as e:
             import traceback
@@ -1366,3 +1376,12 @@ class MainWindow(ctk.CTk):
             self.after(0, lambda: self._set_busy(
                 False, t("error_generic", msg=str(e))
             ))
+            try:
+                from app import telemetry
+                telemetry.report_event("workflow_fail", {
+                    "kind": "auto_edit",
+                    "message": str(e)[:300],
+                    "stack": traceback.format_exc()[:2000],
+                })
+            except Exception:
+                pass
