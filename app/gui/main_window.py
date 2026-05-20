@@ -175,15 +175,19 @@ class MainWindow(ctk.CTk):
 
         sub_beats_tab = self.multi_tabview.add(t("detect_beats_sub"))
         sub_edit_tab = self.multi_tabview.add(t("auto_edit_sub"))
+        sub_manual_tab = self.multi_tabview.add("Manual Edit")
 
         # Scrollable frames dentro ogni sub-tab
         sub_beats = ctk.CTkScrollableFrame(sub_beats_tab, fg_color="transparent")
         sub_beats.pack(fill="both", expand=True)
         sub_edit = ctk.CTkScrollableFrame(sub_edit_tab, fg_color="transparent")
         sub_edit.pack(fill="both", expand=True)
+        sub_manual = ctk.CTkScrollableFrame(sub_manual_tab, fg_color="transparent")
+        sub_manual.pack(fill="both", expand=True)
 
         self._build_tab1(sub_beats)
         self._build_tab2(sub_edit)
+        self._build_tab3_manual(sub_manual)
 
     # ─── Tab 1: Detect Beats ───
 
@@ -542,6 +546,219 @@ class MainWindow(ctk.CTk):
                                        command=self._auto_edit, height=38,
                                        font=("", 14, "bold"), state="disabled")
         self.edit_btn.pack(fill="x", pady=(2, 5))
+
+    # ─── Tab 3: Manual Edit (click-to-apply su clip selezionata) ───
+
+    def _build_tab3_manual(self, parent):
+        """Tab con effetti click-to-apply. L'utente seleziona una clip
+        nella timeline DR e clicca un preset — l'effetto si applica subito.
+
+        Killer feature subscription (positioning 20/05/2026): velocità di
+        CapCut + qualità di DR.
+        """
+        header = ctk.CTkFrame(parent, fg_color="transparent")
+        header.pack(fill="x", pady=(8, 4))
+        ctk.CTkLabel(
+            header, text="Manual Edit — Click-to-Apply",
+            font=("", 14, "bold"),
+        ).pack(anchor="w")
+        ctk.CTkLabel(
+            header,
+            text="Seleziona una clip nella timeline DR (mettila sotto la playhead) → clicca un preset.",
+            font=("", 11), text_color="gray70",
+        ).pack(anchor="w", pady=(0, 4))
+
+        # Status label che mostra la clip corrente sotto playhead
+        self.manual_status_lbl = ctk.CTkLabel(
+            parent, text="Nessuna clip sotto playhead — sposta la testina su una clip",
+            font=("", 11, "italic"), text_color="orange",
+        )
+        self.manual_status_lbl.pack(anchor="w", pady=(0, 8))
+
+        # ── Speed Ramp section ──
+        ctk.CTkLabel(parent, text="⚡ Speed Ramp", font=("", 13, "bold")).pack(anchor="w", pady=(4, 4))
+
+        speed_grid = ctk.CTkFrame(parent, fg_color="transparent")
+        speed_grid.pack(fill="x", pady=(0, 8))
+        speed_presets = [
+            ("montage",   "🎬", "Montage", "Fast → Slow → Normal (cinematic)"),
+            ("hero",      "🦸", "Hero", "Doppio dip (enfasi soggetto)"),
+            ("bullet",    "🎯", "Bullet", "Deep slowmo (Matrix-style)"),
+            ("jump_cut",  "⚡", "Jump cut", "Energy spike"),
+            ("flash_in",  "💥", "Flash in", "Slow → Normal (build-up)"),
+            ("flash_out", "🌊", "Flash out", "Normal → Slow (cool-down)"),
+        ]
+        for idx, (key, emoji, name, hint) in enumerate(speed_presets):
+            row_i, col_i = divmod(idx, 3)
+            speed_grid.grid_columnconfigure(col_i, weight=1)
+            card = ctk.CTkButton(
+                speed_grid,
+                text=f"{emoji}  {name}\n{hint}",
+                command=lambda k=key, n=name: self._manual_apply_speed_ramp(k, n),
+                height=58, font=("", 11), anchor="w",
+                fg_color="#2A2D3E", hover_color="#3D4163",
+            )
+            card.grid(row=row_i, column=col_i, padx=4, pady=4, sticky="ew")
+
+        # ── Freeze frame section ──
+        ctk.CTkLabel(parent, text="❄️ Freeze Frame", font=("", 13, "bold")).pack(anchor="w", pady=(8, 4))
+        freeze_grid = ctk.CTkFrame(parent, fg_color="transparent")
+        freeze_grid.pack(fill="x", pady=(0, 8))
+        freeze_presets = [
+            (6,  "Short", "0.25s @ 24fps"),
+            (12, "Medium", "0.5s @ 24fps"),
+            (24, "Long", "1s @ 24fps"),
+        ]
+        for idx, (frames, name, hint) in enumerate(freeze_presets):
+            freeze_grid.grid_columnconfigure(idx, weight=1)
+            card = ctk.CTkButton(
+                freeze_grid,
+                text=f"❄ {name}\n{hint}",
+                command=lambda f=frames, n=name: self._manual_apply_freeze(f, n),
+                height=52, font=("", 11),
+                fg_color="#2A3548", hover_color="#3D4A63",
+            )
+            card.grid(row=0, column=idx, padx=4, pady=4, sticky="ew")
+
+        # ── Operations utility ──
+        ctk.CTkLabel(parent, text="🔧 Operations", font=("", 13, "bold")).pack(anchor="w", pady=(8, 4))
+        ops_grid = ctk.CTkFrame(parent, fg_color="transparent")
+        ops_grid.pack(fill="x", pady=(0, 8))
+        ctk.CTkButton(
+            ops_grid, text="⨯ Rimuovi Speed Ramp dalla clip",
+            command=self._manual_remove_speed_ramp,
+            height=40, font=("", 11),
+            fg_color="#4A2A2A", hover_color="#5D3939",
+        ).pack(fill="x", padx=4, pady=2)
+
+        # ── Velocity Effects (coming soon placeholder) ──
+        ctk.CTkLabel(parent, text="🎨 Velocity Effects", font=("", 13, "bold")).pack(anchor="w", pady=(8, 4))
+        ctk.CTkLabel(
+            parent,
+            text="Coming v1.6 — Flash, Blur shake, Fade blur, Retro zoom, Rainbow",
+            font=("", 11), text_color="gray60",
+        ).pack(anchor="w", pady=(0, 8))
+
+        # Start polling clip-under-playhead
+        self._manual_poll_active = True
+        self._manual_poll_clip()
+
+    def _manual_poll_clip(self):
+        """Aggiorna status label con clip corrente sotto playhead."""
+        try:
+            if self.timeline:
+                item = self.timeline.GetCurrentVideoItem()
+                if item:
+                    try:
+                        name = item.GetName() if hasattr(item, "GetName") else "Clip"
+                    except Exception:
+                        name = "Clip"
+                    fps = float(self.timeline.GetSetting("timelineFrameRate"))
+                    dur = (int(item.GetEnd()) - int(item.GetStart())) / max(1, fps)
+                    self.manual_status_lbl.configure(
+                        text=f"✓ Clip sotto playhead: «{str(name)[:40]}» ({dur:.1f}s)",
+                        text_color="#10B981",
+                    )
+                else:
+                    self.manual_status_lbl.configure(
+                        text="Nessuna clip sotto playhead — sposta la testina su una clip",
+                        text_color="orange",
+                    )
+        except Exception:
+            pass
+        if getattr(self, "_manual_poll_active", False):
+            self.after(1500, self._manual_poll_clip)
+
+    def _manual_get_current_item(self):
+        """Ritorna timeline item sotto playhead o None."""
+        try:
+            if not self.timeline:
+                self._connect_resolve()
+            if not self.timeline:
+                return None
+            return self.timeline.GetCurrentVideoItem()
+        except Exception:
+            return None
+
+    def _manual_apply_speed_ramp(self, preset_key, preset_label):
+        if not self._check_trial_or_license():
+            return
+        item = self._manual_get_current_item()
+        if not item:
+            self.manual_status_lbl.configure(
+                text="⚠ Nessuna clip selezionata. Sposta la testina su una clip e riprova.",
+                text_color="red",
+            )
+            return
+        try:
+            fps = float(self.timeline.GetSetting("timelineFrameRate"))
+            item_dur = item.GetEnd() - item.GetStart()
+            duration = max(8, min(int(item_dur), int(fps * 1.5)))  # max 1.5s
+            ok = resolve_bridge.apply_speed_ramp_preset(
+                item, preset_name=preset_key, duration=duration,
+                optical_flow=True, beat_offset_frame=None,
+            )
+            if ok:
+                self.manual_status_lbl.configure(
+                    text=f"✓ {preset_label} applicato",
+                    text_color="#10B981",
+                )
+            else:
+                self.manual_status_lbl.configure(
+                    text=f"✗ Impossibile applicare {preset_label}",
+                    text_color="red",
+                )
+        except Exception as e:
+            self.manual_status_lbl.configure(
+                text=f"✗ Errore: {str(e)[:80]}", text_color="red",
+            )
+
+    def _manual_apply_freeze(self, frames, name):
+        if not self._check_trial_or_license():
+            return
+        item = self._manual_get_current_item()
+        if not item:
+            self.manual_status_lbl.configure(
+                text="⚠ Nessuna clip selezionata. Sposta la testina su una clip e riprova.",
+                text_color="red",
+            )
+            return
+        try:
+            ok = resolve_bridge.apply_freeze_frame(item, frames)
+            if ok:
+                self.manual_status_lbl.configure(
+                    text=f"✓ Freeze {name} ({frames}f) applicato",
+                    text_color="#10B981",
+                )
+            else:
+                self.manual_status_lbl.configure(
+                    text=f"✗ Impossibile applicare freeze",
+                    text_color="red",
+                )
+        except Exception as e:
+            self.manual_status_lbl.configure(
+                text=f"✗ Errore: {str(e)[:80]}", text_color="red",
+            )
+
+    def _manual_remove_speed_ramp(self):
+        if not self._check_trial_or_license():
+            return
+        item = self._manual_get_current_item()
+        if not item:
+            self.manual_status_lbl.configure(
+                text="⚠ Nessuna clip selezionata.", text_color="red",
+            )
+            return
+        try:
+            removed = resolve_bridge.remove_speed_ramp(item)
+            self.manual_status_lbl.configure(
+                text=("✓ Speed ramp rimosso" if removed else "Nessun speed ramp da rimuovere"),
+                text_color=("#10B981" if removed else "gray"),
+            )
+        except Exception as e:
+            self.manual_status_lbl.configure(
+                text=f"✗ Errore: {str(e)[:80]}", text_color="red",
+            )
 
     # (Single Clip editing moved to Clip FX plugin)
 
