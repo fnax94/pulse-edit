@@ -631,13 +631,39 @@ class MainWindow(ctk.CTk):
             fg_color="#4A2A2A", hover_color="#5D3939",
         ).pack(fill="x", padx=4, pady=2)
 
-        # ── Velocity Effects (coming soon placeholder) ──
+        # ── Velocity Effects ──
         ctk.CTkLabel(parent, text="🎨 Velocity Effects", font=("", 13, "bold")).pack(anchor="w", pady=(8, 4))
         ctk.CTkLabel(
             parent,
-            text="Coming v1.6 — Flash, Blur shake, Fade blur, Retro zoom, Rainbow",
-            font=("", 11), text_color="gray60",
-        ).pack(anchor="w", pady=(0, 8))
+            text="Effetti visivi al centro della clip (combina con uno speed ramp per impatto cinematico)",
+            font=("", 10), text_color="gray60",
+        ).pack(anchor="w", pady=(0, 4))
+        vfx_grid = ctk.CTkFrame(parent, fg_color="transparent")
+        vfx_grid.pack(fill="x", pady=(0, 6))
+        vfx_presets = [
+            ("flash",      "💡", "Flash", "Lampeggio bianco"),
+            ("blur_shake", "📳", "Blur shake", "Motion blur + camera shake"),
+            ("fade_blur",  "🌫", "Fade blur", "Dissolvenza con blur"),
+            ("retro_zoom", "📼", "Retro zoom", "Zoom pulsante VHS"),
+            ("rainbow",    "🌈", "Rainbow", "Hue spin glitch"),
+        ]
+        for idx, (key, emoji, name, hint) in enumerate(vfx_presets):
+            row_i, col_i = divmod(idx, 3)
+            vfx_grid.grid_columnconfigure(col_i, weight=1)
+            card = ctk.CTkButton(
+                vfx_grid,
+                text=f"{emoji}  {name}\n{hint}",
+                command=lambda k=key, n=name: self._manual_apply_vfx(k, n),
+                height=58, font=("", 11), anchor="w",
+                fg_color="#3A2D4E", hover_color="#4D3D63",
+            )
+            card.grid(row=row_i, column=col_i, padx=4, pady=4, sticky="ew")
+        ctk.CTkButton(
+            parent, text="⨯ Rimuovi Velocity Effects dalla clip",
+            command=self._manual_remove_vfx,
+            height=36, font=("", 11),
+            fg_color="#4A2A2A", hover_color="#5D3939",
+        ).pack(fill="x", padx=4, pady=(2, 8))
 
         # Start polling clip-under-playhead
         self._manual_poll_active = True
@@ -754,6 +780,54 @@ class MainWindow(ctk.CTk):
             self.manual_status_lbl.configure(
                 text=("✓ Speed ramp rimosso" if removed else "Nessun speed ramp da rimuovere"),
                 text_color=("#10B981" if removed else "gray"),
+            )
+        except Exception as e:
+            self.manual_status_lbl.configure(
+                text=f"✗ Errore: {str(e)[:80]}", text_color="red",
+            )
+
+    def _manual_apply_vfx(self, effect_key, effect_label):
+        if not self._check_trial_or_license():
+            return
+        item = self._manual_get_current_item()
+        if not item:
+            self.manual_status_lbl.configure(
+                text="⚠ Nessuna clip selezionata.", text_color="red",
+            )
+            return
+        try:
+            ok = resolve_bridge.apply_velocity_effect(
+                item, effect_name=effect_key, focal_frame=None, pulse_frames=4
+            )
+            if ok:
+                self.manual_status_lbl.configure(
+                    text=f"✓ Velocity Effect «{effect_label}» applicato",
+                    text_color="#10B981",
+                )
+            else:
+                self.manual_status_lbl.configure(
+                    text=f"✗ Impossibile applicare {effect_label}",
+                    text_color="red",
+                )
+        except Exception as e:
+            self.manual_status_lbl.configure(
+                text=f"✗ Errore: {str(e)[:80]}", text_color="red",
+            )
+
+    def _manual_remove_vfx(self):
+        if not self._check_trial_or_license():
+            return
+        item = self._manual_get_current_item()
+        if not item:
+            self.manual_status_lbl.configure(
+                text="⚠ Nessuna clip selezionata.", text_color="red",
+            )
+            return
+        try:
+            n = resolve_bridge.remove_velocity_effects(item)
+            self.manual_status_lbl.configure(
+                text=(f"✓ Rimossi {n} velocity effect" if n else "Nessun velocity effect da rimuovere"),
+                text_color=("#10B981" if n else "gray"),
             )
         except Exception as e:
             self.manual_status_lbl.configure(

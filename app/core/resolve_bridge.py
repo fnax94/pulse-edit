@@ -1638,6 +1638,190 @@ SPEED_RAMP_PRESETS = {
 }
 
 
+# ─── Velocity Effects (overlay visivi sul focal point del speed ramp) ───
+# Ognuno crea o riusa un nodo Fusion specifico tra MediaIn e MediaOut/TimeSpeed.
+# focal_frame = punto in cui l'effetto raggiunge il picco (default centro clip).
+# pulse_frames = durata in frame del "pulse" (default 4 = ~166ms a 24fps).
+VELOCITY_EFFECTS = ["flash", "blur_shake", "fade_blur", "retro_zoom", "rainbow"]
+
+
+def apply_velocity_effect(item, effect_name, focal_frame=None, pulse_frames=4):
+    """Applica un velocity effect al clip via Fusion node tree.
+
+    effect_name: "flash" | "blur_shake" | "fade_blur" | "retro_zoom" | "rainbow"
+
+    Tutti gli effetti sono "puls al focal_frame":
+    - Flash: gain di luminosità sale a 3.0 al focal, torna a 1.0
+    - Blur shake: blur fino a 8px + transform translate random al focal
+    - Fade blur: blur 0 → 30px → 0 lungo tutta la clip (NON puntuale)
+    - Retro zoom: Transform.Size pulse 1.0 → 1.25 → 1.0
+    - Rainbow: hue shift 360° in 4 frame al focal
+
+    Ritorna True se applicato.
+    """
+    if effect_name not in VELOCITY_EFFECTS:
+        return False
+    try:
+        comp = _get_or_create_comp(item)
+        if not comp:
+            return False
+        media_in = comp.FindTool("MediaIn1")
+        media_out = comp.FindTool("MediaOut1")
+        if not media_in or not media_out:
+            return False
+
+        # Determine focal & total duration
+        try:
+            item_dur = int(item.GetEnd() - item.GetStart())
+        except Exception:
+            item_dur = 60
+        if focal_frame is None:
+            focal_frame = item_dur // 2
+        focal_frame = max(0, min(item_dur - 1, int(focal_frame)))
+        pulse = max(2, int(pulse_frames))
+        peak_in = max(0, focal_frame - pulse // 2)
+        peak_out = min(item_dur - 1, focal_frame + pulse // 2)
+
+        # Trova/aggiungi nodo specifico per effetto, posizionato tra ultimo
+        # tool della catena e media_out. Riusa se gia' esistente.
+        existing_ts, xfm = _find_tools(comp)
+        # Helper per inserire nuovo nodo dopo TimeSpeed/Transform/MediaIn
+        last = existing_ts or xfm or media_in
+
+        def _insert_after(node):
+            """Reconnect: last.Output → node.Input ; node.Output → media_out.Input"""
+            try:
+                if node.Input:
+                    try:
+                        node.Input.ConnectTo(last.Output)
+                    except Exception:
+                        pass
+                try:
+                    media_out.Input.ConnectTo(node.Output)
+                except Exception:
+                    pass
+            except Exception:
+                pass
+
+        if effect_name == "flash":
+            tool = comp.FindTool("PE_Flash") or comp.AddTool("BrightnessContrast", 1, 0)
+            tool.SetAttrs({"TOOLS_Name": "PE_Flash"})
+            _insert_after(tool)
+            tool.Gain = comp.BezierSpline()
+            tool.Gain[0] = 1.0
+            tool.Gain[peak_in] = 1.0
+            tool.Gain[focal_frame] = 3.5
+            tool.Gain[peak_out] = 1.0
+            tool.Gain[item_dur - 1] = 1.0
+
+        elif effect_name == "blur_shake":
+            blur = comp.FindTool("PE_BlurShake") or comp.AddTool("Blur", 1, 0)
+            blur.SetAttrs({"TOOLS_Name": "PE_BlurShake"})
+            _insert_after(blur)
+            blur.XBlurSize = comp.BezierSpline()
+            blur.XBlurSize[0] = 0.0
+            blur.XBlurSize[peak_in] = 0.0
+            blur.XBlurSize[focal_frame] = 12.0
+            blur.XBlurSize[peak_out] = 0.0
+            blur.XBlurSize[item_dur - 1] = 0.0
+            # Shake con Transform Center keyframes alternati
+            shake = comp.FindTool("PE_Shake") or comp.AddTool("Transform", 1, 0)
+            shake.SetAttrs({"TOOLS_Name": "PE_Shake"})
+            try:
+                blur.Input.ConnectTo(last.Output)
+                shake.Input.ConnectTo(blur.Output)
+                media_out.Input.ConnectTo(shake.Output)
+            except Exception:
+                pass
+            shake.Center = comp.BezierSpline()
+            shake.Center[0] = {0.5, 0.5}
+            import random as _rnd
+            for f in range(peak_in, peak_out + 1):
+                jitter_x = 0.5 + (_rnd.random() - 0.5) * 0.04
+                jitter_y = 0.5 + (_rnd.random() - 0.5) * 0.04
+                shake.Center[f] = {jitter_x, jitter_y}
+            shake.Center[item_dur - 1] = {0.5, 0.5}
+
+        elif effect_name == "fade_blur":
+            blur = comp.FindTool("PE_FadeBlur") or comp.AddTool("Blur", 1, 0)
+            blur.SetAttrs({"TOOLS_Name": "PE_FadeBlur"})
+            _insert_after(blur)
+            blur.XBlurSize = comp.BezierSpline()
+            # Ramp 0 → 30px → 0 lungo tutta la clip (fade in/out)
+            blur.XBlurSize[0] = 0.0
+            blur.XBlurSize[focal_frame] = 30.0
+            blur.XBlurSize[item_dur - 1] = 0.0
+
+        elif effect_name == "retro_zoom":
+            tool = comp.FindTool("PE_RetroZoom") or comp.AddTool("Transform", 1, 0)
+            tool.SetAttrs({"TOOLS_Name": "PE_RetroZoom"})
+            _insert_after(tool)
+            tool.Size = comp.BezierSpline()
+            tool.Size[0] = 1.0
+            tool.Size[peak_in] = 1.0
+            tool.Size[focal_frame] = 1.25
+            tool.Size[peak_out] = 1.0
+            tool.Size[item_dur - 1] = 1.0
+            # Bonus saturation pulse per look retro
+            try:
+                sat = comp.FindTool("PE_RetroSat") or comp.AddTool("Saturation", 1, 0)
+                sat.SetAttrs({"TOOLS_Name": "PE_RetroSat"})
+                tool_out = tool
+                try:
+                    sat.Input.ConnectTo(tool_out.Output)
+                    media_out.Input.ConnectTo(sat.Output)
+                except Exception:
+                    pass
+                sat.Saturation = comp.BezierSpline()
+                sat.Saturation[0] = 1.0
+                sat.Saturation[peak_in] = 1.0
+                sat.Saturation[focal_frame] = 1.6
+                sat.Saturation[peak_out] = 1.0
+                sat.Saturation[item_dur - 1] = 1.0
+            except Exception:
+                pass
+
+        elif effect_name == "rainbow":
+            tool = comp.FindTool("PE_Rainbow") or comp.AddTool("Hue", 1, 0)
+            tool.SetAttrs({"TOOLS_Name": "PE_Rainbow"})
+            _insert_after(tool)
+            tool.HueRotation = comp.BezierSpline()
+            tool.HueRotation[0] = 0.0
+            tool.HueRotation[peak_in] = 0.0
+            # Spin attraverso lo spettro
+            for k, f in enumerate(range(peak_in, peak_out + 1)):
+                tool.HueRotation[f] = 360.0 * (k / max(1, peak_out - peak_in))
+            tool.HueRotation[peak_out + 1 if peak_out + 1 < item_dur else peak_out] = 0.0
+            tool.HueRotation[item_dur - 1] = 0.0
+
+        return True
+    except Exception as e:
+        return False
+
+
+def remove_velocity_effects(item):
+    """Rimuove tutti i velocity effects PE_* dalla Fusion comp dell'item."""
+    removed = 0
+    try:
+        comp_names = item.GetFusionCompNameList() or []
+        for cn in comp_names:
+            comp = item.LoadFusionCompByName(cn)
+            if not comp:
+                continue
+            for prefix in ("PE_Flash", "PE_BlurShake", "PE_Shake", "PE_FadeBlur",
+                           "PE_RetroZoom", "PE_RetroSat", "PE_Rainbow"):
+                tool = comp.FindTool(prefix)
+                if tool:
+                    try:
+                        tool.Delete()
+                        removed += 1
+                    except Exception:
+                        pass
+    except Exception:
+        pass
+    return removed
+
+
 def _apply_optimal_retime_settings(item, has_extreme_slowmo=False):
     """Setta le property Resolve ottimali per speed ramp di qualità.
 
