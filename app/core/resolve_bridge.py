@@ -3,6 +3,7 @@
 import sys
 import os
 import math
+import re as _re
 
 
 # ─── Zoom easing presets ───
@@ -1614,6 +1615,180 @@ def remove_speed_ramp(item):
     except Exception:
         pass
     return removed
+
+
+# ─── Speed ramp presets ──────────────────────────────────────────────────
+# Ogni preset è una curva di velocità keyframes [(t_relative, speed_mult), ...]
+# dove t_relative ∈ [0,1] della durata del ramp e speed_mult = velocita' clip
+# (1.0 = normale, 0.5 = slowmo, 2.0 = fast). Le curve sono ispirate ai pattern
+# Veed/CapCut/Premiere standard del settore.
+SPEED_RAMP_PRESETS = {
+    # Montage: accelera → rallenta → torna normale (S-shape cinematic)
+    "montage": [(0.0, 1.0), (0.20, 2.2), (0.45, 0.45), (0.70, 0.30), (1.0, 1.0)],
+    # Hero: doppio dip per enfasi su soggetto (es. 2 hit consecutivi)
+    "hero":    [(0.0, 1.0), (0.15, 1.6), (0.30, 0.30), (0.50, 1.6), (0.70, 0.30), (1.0, 1.0)],
+    # Bullet: drop profondo simmetrico — Matrix bullet-time
+    "bullet":  [(0.0, 1.0), (0.40, 1.0), (0.50, 0.15), (0.60, 1.0), (1.0, 1.0)],
+    # Jump cut: spike di velocità — taglio energetico
+    "jump_cut":[(0.0, 1.0), (0.43, 1.0), (0.50, 3.0), (0.57, 1.0), (1.0, 1.0)],
+    # Flash in: slow → fast (build-up al cut)
+    "flash_in":[(0.0, 0.40), (0.65, 0.40), (1.0, 1.0)],
+    # Flash out: fast → slow (cool-down dopo cut)
+    "flash_out":[(0.0, 1.0), (0.35, 1.0), (1.0, 0.40)],
+}
+
+
+def _apply_optimal_retime_settings(item, has_extreme_slowmo=False):
+    """Setta le property Resolve ottimali per speed ramp di qualità.
+
+    DR offre 3 livelli di Retime Process:
+      0 = Nearest (jittery, no interpolation)
+      1 = Frame Blending (cross-fade tra frame, no motion estimation)
+      2 = Optical Flow (motion-estimated interpolation, qualita' migliore)
+
+    E 5 Motion Estimation modes (solo con Optical Flow):
+      0 = Standard Faster
+      1 = Standard Better
+      2 = Enhanced Faster
+      3 = Enhanced Better
+      4 = Speed Warp (Neural, DR Studio only — top quality)
+
+    Per slowmo aggressivo (<0.4x) usiamo Speed Warp se disponibile,
+    altrimenti Enhanced Better. Per ramp moderati basta Optical Flow standard.
+    """
+    try:
+        item.SetProperty("Retime Process", 2)  # Optical Flow
+    except Exception:
+        try:
+            item.SetProperty("Retime Process", 1)  # Frame Blending fallback
+        except Exception:
+            pass
+
+    # Motion Estimation: prova Speed Warp (4) per slowmo estremo, fallback a Enhanced Better (3)
+    if has_extreme_slowmo:
+        for mode in (4, 3, 1):
+            try:
+                item.SetProperty("Motion Estimation", mode)
+                break
+            except Exception:
+                continue
+    else:
+        try:
+            item.SetProperty("Motion Estimation", 3)  # Enhanced Better
+        except Exception:
+            try:
+                item.SetProperty("Motion Estimation", 1)  # Standard Better
+            except Exception:
+                pass
+
+    # Scaling per frame blending qualità
+    try:
+        item.SetProperty("Scaling", 1)  # Better
+    except Exception:
+        pass
+
+
+def _detect_clip_low_fps(item):
+    """Ritorna True se il clip source ha fps < 30 (24/25/29.97) — richiede
+    interpolazione obbligatoria per slowmo. None se non rilevabile."""
+    try:
+        # Property fps puo' essere su MediaPoolItem
+        mp_item = item.GetMediaPoolItem()
+        if not mp_item:
+            return None
+        props = mp_item.GetClipProperty() or {}
+        fps_str = props.get("FPS") or props.get("Video FPS") or ""
+        # FPS string "24.000" / "23.976" / "29.97"
+        m = _re.search(r"([\d.]+)", str(fps_str))
+        if not m:
+            return None
+        f = float(m.group(1))
+        return f < 30.0
+    except Exception:
+        return None
+
+
+def apply_speed_ramp_preset(item, preset_name, duration, optical_flow=True,
+                            beat_offset_frame=None):
+    """Applica una curva di speed ramp preset al clip.
+
+    preset_name: "montage" | "hero" | "bullet" | "jump_cut" | "flash_in" | "flash_out"
+    duration: lunghezza in frame della curva
+    optical_flow: True per Retime Optical Flow + Motion Estimation ottimale.
+                  Auto-forzato a True se il clip ha fps < 30.
+    beat_offset_frame: se dato, sincronizza il "punto focale" della curva
+                       (il dip o lo spike) ESATTAMENTE al frame del beat
+                       (in frame relativi all'inizio clip 0..duration).
+
+    Ritorna True se applicato.
+    """
+    curve = SPEED_RAMP_PRESETS.get(preset_name)
+    if not curve or duration <= 0:
+        return False
+
+    # Punto focale del preset (dove la velocità "fa l'effetto") relativo [0..1]:
+    # = il keyframe con il minimo speed (slowmo) o massimo (jump_cut spike).
+    focal_t_default = {
+        "montage": 0.70,   # punto piu lento
+        "hero":    0.50,   # centro del doppio dip
+        "bullet":  0.50,   # drop simmetrico al centro
+        "jump_cut":0.50,   # spike al centro
+        "flash_in":1.0,    # fine = transizione al cut
+        "flash_out":0.0,   # inizio = transizione dal cut
+    }
+    focal_t = focal_t_default.get(preset_name, 0.5)
+
+    # Shift della curva per allineare focal al beat_offset_frame
+    shift = 0.0
+    if beat_offset_frame is not None and duration > 1:
+        target_t = float(beat_offset_frame) / float(max(1, duration - 1))
+        shift = target_t - focal_t
+        # Clamp shift in modo che la curva resti dentro [0,1]
+        # (se il beat e' troppo vicino ai bordi, accetta clipping)
+        shift = max(-focal_t, min(1.0 - focal_t, shift))
+
+    try:
+        # Determina se servono Motion Estimation di qualità top
+        min_speed = min(s for _, s in curve)
+        has_extreme = min_speed < 0.4
+
+        # Optical flow forzato se clip a basso fps
+        low_fps = _detect_clip_low_fps(item)
+        force_of = bool(low_fps) or has_extreme
+        if optical_flow or force_of:
+            _apply_optimal_retime_settings(item, has_extreme_slowmo=has_extreme)
+
+        comp = _get_or_create_comp(item)
+        if not comp:
+            return False
+        media_in = comp.FindTool("MediaIn1")
+        media_out = comp.FindTool("MediaOut1")
+        if not media_in or not media_out:
+            return False
+        existing_ts, xfm = _find_tools(comp)
+        ts = existing_ts if existing_ts else comp.AddTool("TimeSpeed", 1, 0)
+        if not ts:
+            return False
+        _reconnect_chain(comp, ts, xfm)
+        ts.Speed = comp.BezierSpline()
+
+        # Applica curve con shift e ai bordi assicurati a speed normale
+        applied_frames = set()
+        for t_rel, speed in curve:
+            t_shifted = max(0.0, min(1.0, t_rel + shift))
+            frame = int(round(t_shifted * max(1, duration - 1)))
+            ts.Speed[frame] = float(speed)
+            applied_frames.add(frame)
+        # Garantisci che il clip inizi e finisca a velocita' normale (1.0) se
+        # la curva non lo specifica gia' agli estremi (evita "salto" al cut).
+        if 0 not in applied_frames:
+            ts.Speed[0] = 1.0
+        if duration - 1 not in applied_frames:
+            ts.Speed[duration - 1] = 1.0
+
+        return True
+    except Exception:
+        return False
 
 
 def apply_freeze_frame(item, freeze_frames):

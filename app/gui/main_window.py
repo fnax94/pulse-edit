@@ -456,45 +456,44 @@ class MainWindow(ctk.CTk):
         ).pack(anchor="w", pady=(0, 2))
 
         # ── Speed ramp on downbeats (Pro feature) ──
+        # Preset standard del settore (Veed/CapCut/Premiere). I 6 preset
+        # hard-coded usano curve specifiche; "Custom" lascia controllare
+        # speed+duration manualmente.
+        self._ramp_presets = [
+            ("montage",   "Montage (fast→slow→normal)"),
+            ("hero",      "Hero (double dip)"),
+            ("bullet",    "Bullet (deep slowmo)"),
+            ("jump_cut",  "Jump cut (energy spike)"),
+            ("flash_in",  "Flash in (build-up)"),
+            ("flash_out", "Flash out (cool-down)"),
+            ("custom",    "Custom (slider speed)"),
+        ]
         ramp_row = ctk.CTkFrame(parent, fg_color="transparent")
         ramp_row.pack(fill="x", pady=(8, 0))
         self.ramp_var = ctk.BooleanVar(value=False)
         def _on_ramp_toggle():
-            state = "normal" if self.ramp_var.get() else "disabled"
-            self.ramp_preset_combo.configure(state="readonly" if self.ramp_var.get() else "disabled")
-            self.ramp_speed_slider.configure(state=state)
-            self.ramp_dur_slider.configure(state=state)
+            on = self.ramp_var.get()
+            self.ramp_preset_combo.configure(state="readonly" if on else "disabled")
+            self.ramp_dur_slider.configure(state="normal" if on else "disabled")
+            # Speed slider attivo solo per "Custom"
+            is_custom = on and self.ramp_preset_combo.get().startswith("Custom")
+            self.ramp_speed_slider.configure(state="normal" if is_custom else "disabled")
+        def _on_preset_change(_v=None):
+            is_custom = self.ramp_var.get() and self.ramp_preset_combo.get().startswith("Custom")
+            self.ramp_speed_slider.configure(state="normal" if is_custom else "disabled")
         self.ramp_check = ctk.CTkCheckBox(
             ramp_row, text="Speed ramp on downbeats",
             variable=self.ramp_var, font=("", 12),
             command=_on_ramp_toggle,
         )
         self.ramp_check.pack(side="left")
-        self._ramp_presets = [
-            ("in", "Slow → Normal (cinematic)"),
-            ("out", "Normal → Slow (shockwave)"),
-            ("in_out", "Slow → Fast → Slow (pulse)"),
-        ]
         self.ramp_preset_combo = ctk.CTkComboBox(
             ramp_row, values=[lbl for _, lbl in self._ramp_presets],
-            width=210, state="disabled",
+            width=240, state="disabled",
+            command=_on_preset_change,
         )
         self.ramp_preset_combo.set(self._ramp_presets[0][1])
         self.ramp_preset_combo.pack(side="right", padx=(5, 0))
-
-        ramp_speed_row = ctk.CTkFrame(parent, fg_color="transparent")
-        ramp_speed_row.pack(fill="x", pady=(2, 0))
-        ctk.CTkLabel(ramp_speed_row, text="Speed", width=70, anchor="w",
-                     font=("", 11), text_color="gray70").pack(side="left", padx=(24, 0))
-        self.ramp_speed_val = ctk.CTkLabel(ramp_speed_row, text="0.5×", font=("", 12, "bold"), width=40)
-        self.ramp_speed_val.pack(side="right")
-        self.ramp_speed_slider = ctk.CTkSlider(
-            ramp_speed_row, from_=0.20, to=0.90, number_of_steps=14,
-            command=lambda v: self.ramp_speed_val.configure(text=f"{float(v):.2f}×"),
-            width=160, state="disabled",
-        )
-        self.ramp_speed_slider.set(0.5)
-        self.ramp_speed_slider.pack(side="right", padx=(5, 5))
 
         ramp_dur_row = ctk.CTkFrame(parent, fg_color="transparent")
         ramp_dur_row.pack(fill="x", pady=(2, 0))
@@ -509,6 +508,21 @@ class MainWindow(ctk.CTk):
         )
         self.ramp_dur_slider.set(30)
         self.ramp_dur_slider.pack(side="right", padx=(5, 5))
+
+        ramp_speed_row = ctk.CTkFrame(parent, fg_color="transparent")
+        ramp_speed_row.pack(fill="x", pady=(2, 0))
+        ctk.CTkLabel(ramp_speed_row, text="Custom speed", width=110, anchor="w",
+                     font=("", 11), text_color="gray70").pack(side="left", padx=(24, 0))
+        self.ramp_speed_val = ctk.CTkLabel(ramp_speed_row, text="0.5×", font=("", 12, "bold"), width=40)
+        self.ramp_speed_val.pack(side="right")
+        self.ramp_speed_slider = ctk.CTkSlider(
+            ramp_speed_row, from_=0.20, to=0.90, number_of_steps=14,
+            command=lambda v: self.ramp_speed_val.configure(text=f"{float(v):.2f}×"),
+            width=160, state="disabled",
+        )
+        self.ramp_speed_slider.set(0.5)
+        self.ramp_speed_slider.pack(side="right", padx=(5, 5))
+
         ctk.CTkLabel(
             parent,
             text="Variazione velocità sul downbeat — Optical Flow attivo per slowmo fluido",
@@ -1464,12 +1478,12 @@ class MainWindow(ctk.CTk):
         freeze_dur = int(self.freeze_slider.get()) if hasattr(self, "freeze_slider") else 0
         # Speed ramp su downbeat (Pro)
         ramp_on = bool(getattr(self, "ramp_var", None) and self.ramp_var.get())
-        ramp_dir = "in"
+        ramp_preset = "montage"
         if hasattr(self, "ramp_preset_combo") and hasattr(self, "_ramp_presets"):
             cur = self.ramp_preset_combo.get()
             for key, lbl in self._ramp_presets:
                 if lbl == cur:
-                    ramp_dir = key
+                    ramp_preset = key
                     break
         ramp_speed = float(self.ramp_speed_slider.get()) if hasattr(self, "ramp_speed_slider") else 0.5
         ramp_dur = int(self.ramp_dur_slider.get()) if hasattr(self, "ramp_dur_slider") else 30
@@ -1481,7 +1495,7 @@ class MainWindow(ctk.CTk):
             args=(folder, vtrack_idx, trim_start_s, trim_end_s,
                   clip_order, do_clear, do_unique, trans_key,
                   freeze_on, freeze_dur,
-                  ramp_on, ramp_dir, ramp_speed, ramp_dur),
+                  ramp_on, ramp_preset, ramp_speed, ramp_dur),
             daemon=True
         )
         thread.start()
@@ -1489,7 +1503,7 @@ class MainWindow(ctk.CTk):
     def _do_auto_edit(self, folder, vtrack_idx, trim_start_s, trim_end_s,
                        clip_order, do_clear, do_unique, trans_key,
                        freeze_on=False, freeze_dur=10,
-                       ramp_on=False, ramp_dir="in", ramp_speed=0.5, ramp_dur=30):
+                       ramp_on=False, ramp_preset="montage", ramp_speed=0.5, ramp_dur=30):
         try:
             fps = float(self.timeline.GetSetting("timelineFrameRate"))
 
@@ -1609,42 +1623,55 @@ class MainWindow(ctk.CTk):
                 _log.info(f"freeze frames applied: {applied}/{len(placed)} clips on downbeat")
 
             # ── Speed ramp su downbeats (Pro) ──
-            # Per ogni clip sul downbeat, varia la velocita' secondo il preset:
-            #   "in":     speed_from(1.0) → ramp_speed (rallenta in arrivo al cut)
-            #   "out":    ramp_speed → 1.0 (parte slow poi normale)
-            #   "in_out": 1.0 → ramp_speed → 1.0 (pulse)
+            # Preset standard del settore (montage/hero/bullet/jump_cut/flash_in/flash_out)
+            # oppure "custom" che usa slider speed + cubic_ease come fallback.
             if ramp_on and downbeat_frames:
                 self.after(0, lambda: self._set_progress(0.84, "Applico speed ramp..."))
                 tolerance = 2
                 ramp_applied = 0
-                # Easing: cubic_ease per transizione naturale (smooth in/out)
-                easing_key = "cubic_ease"
                 for item in placed:
                     try:
                         item_start = item.GetStart()
                         is_downbeat = any(abs(item_start - df) <= tolerance for df in downbeat_frames)
-                        if is_downbeat:
-                            # Clamp duration al clip length
-                            try:
-                                item_dur = item.GetEnd() - item.GetStart()
-                                effective_dur = min(int(ramp_dur), max(8, int(item_dur)))
-                            except Exception:
-                                effective_dur = int(ramp_dur)
+                        if not is_downbeat:
+                            continue
+                        try:
+                            item_dur = item.GetEnd() - item.GetStart()
+                            effective_dur = min(int(ramp_dur), max(8, int(item_dur)))
+                        except Exception:
+                            effective_dur = int(ramp_dur)
+
+                        # Trova il downbeat piu' vicino e calcola offset
+                        # relativo all'inizio del clip → sync curva sul beat.
+                        nearest_df = min(downbeat_frames, key=lambda df: abs(df - item_start))
+                        beat_offset = max(0, nearest_df - item_start)
+                        # Clampa al range valido del clip
+                        beat_offset = min(beat_offset, effective_dur - 1)
+
+                        if ramp_preset == "custom":
                             ok = resolve_bridge._apply_fusion_speed_ramp(
                                 item,
                                 speed_value=float(ramp_speed),
                                 duration=effective_dur,
-                                easing_type=easing_key,
-                                ramp_dir=ramp_dir,
+                                easing_type="cubic_ease",
+                                ramp_dir="in_out",
                                 speed_from=1.0,
                                 freeze_frames=0,
                                 optical_flow=True,
                             )
-                            if ok:
-                                ramp_applied += 1
+                        else:
+                            ok = resolve_bridge.apply_speed_ramp_preset(
+                                item,
+                                preset_name=ramp_preset,
+                                duration=effective_dur,
+                                optical_flow=True,
+                                beat_offset_frame=beat_offset,
+                            )
+                        if ok:
+                            ramp_applied += 1
                     except Exception as _ramp_err:
                         _log.warning(f"speed ramp failed on item: {_ramp_err}")
-                _log.info(f"speed ramps applied: {ramp_applied}/{len(placed)} clips on downbeat (dir={ramp_dir}, speed={ramp_speed}x)")
+                _log.info(f"speed ramps applied: {ramp_applied}/{len(placed)} clips on downbeat (preset={ramp_preset})")
 
             # ── Phase 6: Transitions (85%-95%) ──
             if trans_key != "none" and placed_count > 1:
