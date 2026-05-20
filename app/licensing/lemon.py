@@ -8,6 +8,11 @@ import hashlib
 import certifi
 from app.i18n import t
 
+try:
+    from app.__version__ import __version__ as _PE_VERSION
+except Exception:
+    _PE_VERSION = "unknown"
+
 LICENSE_SERVER = "https://license-server.abtools.workers.dev"
 _SSL_CTX = ssl.create_default_context(cafile=certifi.where())
 
@@ -17,6 +22,19 @@ def _get_instance_id():
     node = platform.node()
     mac_id = hashlib.sha256(node.encode()).hexdigest()[:16]
     return f"pulseedit-{mac_id}"
+
+
+def _short_platform():
+    """Compact platform tag for telemetry: e.g. 'macOS-14.4-arm64' or 'Windows-11'."""
+    sys_name = platform.system() or "?"
+    if sys_name == "Darwin":
+        sys_name = "macOS"
+    rel = (platform.release() or "").split(".")[0]
+    arch = platform.machine() or ""
+    parts = [sys_name]
+    if rel: parts.append(rel)
+    if arch: parts.append(arch)
+    return "-".join(parts)[:32]
 
 
 def verify_license(license_key):
@@ -58,6 +76,8 @@ def validate_license(license_key):
     result, error = _api_call("/validate", {
         "license_key": key,
         "machine_id": machine_id,
+        "version": _PE_VERSION,
+        "platform": _short_platform(),
     })
 
     if error:

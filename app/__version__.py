@@ -3,4 +3,4 @@
 Bump here, read everywhere (notarize.sh, make_dmg.sh, Inno Setup, diagnose()).
 """
 
-__version__ = "1.5.3"
+__version__ = "1.5.4"

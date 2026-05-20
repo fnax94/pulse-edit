@@ -9,6 +9,7 @@ import customtkinter as ctk
 from app.licensing import storage, lemon
 from app.gui.main_window import MainWindow
 from app.gui.license_dialog import LicenseDialog
+from app import telemetry
 
 def _create_desktop_shortcut():
     if platform.system() != "Windows" or not getattr(sys, 'frozen', False):
@@ -78,6 +79,17 @@ def check_license():
 def main():
     ctk.set_appearance_mode("dark")
     ctk.set_default_color_theme("blue")
+
+    # Telemetria anonima (opt-out via Settings). Vedi pulseedit.com/privacy
+    try:
+        telemetry.init(
+            product="pulseedit",
+            enabled=telemetry.load_opt_out("pulseedit"),
+            install_excepthook=True,
+        )
+        telemetry.report_event("boot")
+    except Exception:
+        pass
 
     licensed = check_license()
 
