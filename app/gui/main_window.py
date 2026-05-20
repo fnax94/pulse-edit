@@ -428,6 +428,33 @@ class MainWindow(ctk.CTk):
             font=("", 10), text_color="gray")
         self.ai_intensity_hint.pack(anchor="w")
 
+        # ── Freeze frame on downbeats (Pro feature) ──
+        freeze_row = ctk.CTkFrame(parent, fg_color="transparent")
+        freeze_row.pack(fill="x", pady=(8, 0))
+        self.freeze_var = ctk.BooleanVar(value=False)
+        self.freeze_check = ctk.CTkCheckBox(
+            freeze_row, text="Freeze on downbeats",
+            variable=self.freeze_var, font=("", 12),
+            command=lambda: self.freeze_slider.configure(
+                state="normal" if self.freeze_var.get() else "disabled"
+            ),
+        )
+        self.freeze_check.pack(side="left")
+        self.freeze_val = ctk.CTkLabel(freeze_row, text="10f", font=("", 12, "bold"), width=40)
+        self.freeze_val.pack(side="right")
+        self.freeze_slider = ctk.CTkSlider(
+            freeze_row, from_=2, to=60, number_of_steps=58,
+            command=lambda v: self.freeze_val.configure(text=f"{int(v)}f"),
+            width=130, state="disabled",
+        )
+        self.freeze_slider.set(10)
+        self.freeze_slider.pack(side="right", padx=(5, 5))
+        ctk.CTkLabel(
+            parent,
+            text="Ferma il frame sul downbeat — N frame di pausa, poi riprende",
+            font=("", 10), text_color="gray",
+        ).pack(anchor="w", pady=(0, 2))
+
         # AI Auto-Edit button
         self.ai_edit_btn = ctk.CTkButton(
             parent, text=f"🧠  {t('ai_edit_btn')}",
@@ -1372,19 +1399,24 @@ class MainWindow(ctk.CTk):
         do_unique = self.unique_var.get()
         # Transition — Coming Soon, forced to none for v1.0
         trans_key = "none"
+        # Freeze frame su downbeat (Pro)
+        freeze_on = bool(getattr(self, "freeze_var", None) and self.freeze_var.get())
+        freeze_dur = int(self.freeze_slider.get()) if hasattr(self, "freeze_slider") else 0
 
         self._set_busy(True, t("editing"))
 
         thread = threading.Thread(
             target=self._do_auto_edit,
             args=(folder, vtrack_idx, trim_start_s, trim_end_s,
-                  clip_order, do_clear, do_unique, trans_key),
+                  clip_order, do_clear, do_unique, trans_key,
+                  freeze_on, freeze_dur),
             daemon=True
         )
         thread.start()
 
     def _do_auto_edit(self, folder, vtrack_idx, trim_start_s, trim_end_s,
-                       clip_order, do_clear, do_unique, trans_key):
+                       clip_order, do_clear, do_unique, trans_key,
+                       freeze_on=False, freeze_dur=10):
         try:
             fps = float(self.timeline.GetSetting("timelineFrameRate"))
 
@@ -1478,6 +1510,32 @@ class MainWindow(ctk.CTk):
             _log.debug(f"place_clips done: {len(placed) if placed else 0} placed")
 
             placed_count = len(placed) if placed else 0
+
+            # ── Freeze frame su downbeats (Pro) ──
+            # Per ogni clip piazzato il cui inizio coincide con un downbeat
+            # (entro 2 frame di tolleranza), applica freeze_dur frame di pausa
+            # all'inizio. Crea l'effetto "shutter stop" sul beat forte.
+            if freeze_on and freeze_dur > 0 and placed and self.upbeat_times:
+                self.after(0, lambda: self._set_progress(0.82, "Applico freeze frame..."))
+                tl_start = self.timeline.GetStartFrame()
+                # Converto i downbeats da secondi a frame timeline-assoluto
+                downbeat_frames = set()
+                for t_s in self.upbeat_times:
+                    df = tl_start + int(round(t_s * fps))
+                    downbeat_frames.add(df)
+                tolerance = 2
+                applied = 0
+                for item in placed:
+                    try:
+                        item_start = item.GetStart()
+                        # Hit se start vicino a un downbeat
+                        is_downbeat = any(abs(item_start - df) <= tolerance for df in downbeat_frames)
+                        if is_downbeat:
+                            if resolve_bridge.apply_freeze_frame(item, freeze_dur):
+                                applied += 1
+                    except Exception as _frz_err:
+                        _log.warning(f"freeze frame failed on item: {_frz_err}")
+                _log.info(f"freeze frames applied: {applied}/{len(placed)} clips on downbeat")
 
             # ── Phase 6: Transitions (85%-95%) ──
             if trans_key != "none" and placed_count > 1:

@@ -1616,6 +1616,47 @@ def remove_speed_ramp(item):
     return removed
 
 
+def apply_freeze_frame(item, freeze_frames):
+    """Applica un freeze frame all'inizio della clip via Fusion TimeSpeed.
+
+    L'utente vede: il clip parte FERMO sul primo frame per N frame, poi
+    riprende a velocita' normale. Effetto "shutter stop" su downbeat.
+
+    freeze_frames: numero di frame di pausa (es. 10 ≈ 0.4s a 24fps).
+    Ritorna True se applicato, False se errore.
+    """
+    if freeze_frames <= 0:
+        return False
+    try:
+        comp = _get_or_create_comp(item)
+        if not comp:
+            return False
+        media_in = comp.FindTool("MediaIn1")
+        media_out = comp.FindTool("MediaOut1")
+        if not media_in or not media_out:
+            return False
+
+        existing_ts, xfm = _find_tools(comp)
+        if existing_ts:
+            ts = existing_ts
+        else:
+            ts = comp.AddTool("TimeSpeed", 1, 0)
+            if not ts:
+                return False
+        _reconnect_chain(comp, ts, xfm)
+
+        # Curve: Speed = 0 dal frame 0 al frame `freeze_frames`, poi salta a 1.
+        ts.Speed = comp.BezierSpline()
+        for f in range(0, max(1, int(freeze_frames))):
+            ts.Speed[f] = 0.0
+        # Subito dopo freeze, ripristina velocita' normale (con piccolo step)
+        ts.Speed[int(freeze_frames)] = 0.0
+        ts.Speed[int(freeze_frames) + 1] = 1.0
+        return True
+    except Exception:
+        return False
+
+
 def _apply_fusion_speed_ramp(item, speed_value, duration, easing_type,
                              ramp_dir="in", speed_from=None,
                              freeze_frames=0, optical_flow=False):
