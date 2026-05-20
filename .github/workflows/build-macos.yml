@@ -100,7 +100,26 @@ jobs:
             --hidden-import app.core.resolve_worker \
             --hidden-import app.core.editor \
             --hidden-import app.core.mood_analyzer \
+            --osx-bundle-identifier com.abtools.pulseedit \
             main.py
+
+      - name: Patch Info.plist with app version
+        run: |
+          VERSION=$(python3 -c "import re; m=re.search(r'__version__\s*=\s*[\"\']([^\"\']+)[\"\']', open('app/__version__.py').read()); print(m.group(1))")
+          PLIST="dist/PulseEdit.app/Contents/Info.plist"
+          if [ ! -f "$PLIST" ]; then
+            echo "Info.plist not found at $PLIST"; exit 1
+          fi
+          /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VERSION" "$PLIST" 2>/dev/null || \
+            /usr/libexec/PlistBuddy -c "Add :CFBundleShortVersionString string $VERSION" "$PLIST"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $VERSION" "$PLIST" 2>/dev/null || \
+            /usr/libexec/PlistBuddy -c "Add :CFBundleVersion string $VERSION" "$PLIST"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName Pulse Edit" "$PLIST" 2>/dev/null || \
+            /usr/libexec/PlistBuddy -c "Add :CFBundleDisplayName string 'Pulse Edit'" "$PLIST"
+          /usr/libexec/PlistBuddy -c "Set :NSHighResolutionCapable true" "$PLIST" 2>/dev/null || \
+            /usr/libexec/PlistBuddy -c "Add :NSHighResolutionCapable bool true" "$PLIST"
+          echo "Info.plist patched with version $VERSION"
+          /usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$PLIST"
 
       - name: Import Developer ID certificate
         env:
