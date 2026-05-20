@@ -785,10 +785,36 @@ class MainWindow(ctk.CTk):
                 return
             self.audio_file_path = file_path
 
+            # ── Step 1.5: Select audio range (optional) ──
+            # Mostra modal con waveform + 2 slider; se l'utente seleziona un
+            # range, la detection viene fatta solo su quella porzione (beat
+            # times poi shiftati per matchare la timeline DR).
+            self.after(0, lambda: self._set_progress(0.15, "Caricamento anteprima audio..."))
+            start_s, end_s = None, None
+            try:
+                peaks, duration = beat_detector.get_waveform_peaks(file_path, num_bins=600)
+            except Exception as _peek_err:
+                peaks, duration = [], 0.0
+
+            if duration > 8.0 and peaks:
+                # Solo per file > 8s mostriamo il selector
+                self._audio_range_result = "full"  # default
+                self._audio_range_event = threading.Event()
+                self.after(0, lambda: self._show_audio_range_modal(peaks, duration))
+                self._audio_range_event.wait(timeout=300)  # 5min user timeout
+                if isinstance(self._audio_range_result, tuple):
+                    start_s, end_s = self._audio_range_result
+                # "full" or "cancel" → start_s/end_s restano None = analisi completa
+                if self._audio_range_result == "cancel":
+                    self.after(0, lambda: self._set_busy(False, "Cancellato"))
+                    return
+
             self.after(0, lambda: self._set_progress(0.3, t("detecting")))
 
             sensitivity = self.sens_slider.get() / 100.0
-            bpm, beats, upbeats, energy = beat_detector.detect_beats(file_path, sensitivity)
+            bpm, beats, upbeats, energy = beat_detector.detect_beats(
+                file_path, sensitivity, start_s=start_s, end_s=end_s
+            )
 
             self.after(0, lambda: self._set_progress(0.7, t("detecting")))
 
@@ -922,6 +948,128 @@ class MainWindow(ctk.CTk):
             self.after(0, lambda: self._set_busy(
                 False, t("error_generic", msg=err_msg)
             ))
+
+    # ─── Select Audio Range Modal ───
+
+    def _show_audio_range_modal(self, peaks, duration):
+        """Modal con waveform + 2 slider per scegliere il range di analisi audio.
+
+        L'utente puo': usare tutta la traccia, scegliere un range, o annullare.
+        Setta self._audio_range_result = "full" | "cancel" | (start_s, end_s).
+        Sblocca self._audio_range_event quando chiuso.
+        """
+        from tkinter import Canvas
+        import customtkinter as _ctk
+
+        modal = _ctk.CTkToplevel(self)
+        modal.title("Seleziona range audio")
+        modal.geometry("820x340")
+        modal.transient(self)
+        modal.grab_set()
+        modal.attributes("-topmost", True)
+
+        header_txt = f"Durata audio: {int(duration//60)}:{int(duration%60):02d} — scegli la porzione da analizzare"
+        _ctk.CTkLabel(modal, text=header_txt, font=("", 13, "bold")).pack(pady=(14, 6))
+        _ctk.CTkLabel(
+            modal,
+            text="Trascina gli slider per restringere l'analisi. I beat marker resteranno coerenti con la timeline DR.",
+            font=("", 11),
+            text_color="gray60",
+        ).pack(pady=(0, 8))
+
+        canvas_w, canvas_h = 760, 130
+        canvas = Canvas(modal, width=canvas_w, height=canvas_h, bg="#1a1a1a", highlightthickness=0)
+        canvas.pack(padx=20, pady=8)
+
+        if peaks:
+            n = len(peaks)
+            bin_w = canvas_w / n
+            mid_y = canvas_h / 2
+            for i, p in enumerate(peaks):
+                x = i * bin_w
+                h = p * (canvas_h * 0.42)
+                canvas.create_line(x, mid_y - h, x, mid_y + h, fill="#4A90E2", width=1)
+
+        state = {"start": 0.0, "end": float(duration)}
+
+        def fmt_time(s):
+            s = max(0, float(s))
+            m, sec = divmod(int(s), 60)
+            return f"{m}:{sec:02d}"
+
+        def update_overlay():
+            canvas.delete("overlay")
+            sx = state["start"] / duration * canvas_w
+            ex = state["end"] / duration * canvas_w
+            # Dim outside selection
+            canvas.create_rectangle(0, 0, sx, canvas_h, fill="#000", stipple="gray50", outline="", tags="overlay")
+            canvas.create_rectangle(ex, 0, canvas_w, canvas_h, fill="#000", stipple="gray50", outline="", tags="overlay")
+            # Yellow brand handles
+            canvas.create_line(sx, 0, sx, canvas_h, fill="#FECE00", width=2, tags="overlay")
+            canvas.create_line(ex, 0, ex, canvas_h, fill="#FECE00", width=2, tags="overlay")
+
+        sframe = _ctk.CTkFrame(modal, fg_color="transparent")
+        sframe.pack(fill="x", padx=20, pady=(8, 2))
+        start_lbl = _ctk.CTkLabel(sframe, text=f"Start: {fmt_time(0)}", width=110, anchor="w")
+        start_lbl.pack(side="left")
+        start_slider = _ctk.CTkSlider(sframe, from_=0, to=float(duration), number_of_steps=int(duration * 10))
+        start_slider.pack(side="left", fill="x", expand=True, padx=8)
+        start_slider.set(0)
+
+        eframe = _ctk.CTkFrame(modal, fg_color="transparent")
+        eframe.pack(fill="x", padx=20, pady=(2, 8))
+        end_lbl = _ctk.CTkLabel(eframe, text=f"End: {fmt_time(duration)}", width=110, anchor="w")
+        end_lbl.pack(side="left")
+        end_slider = _ctk.CTkSlider(eframe, from_=0, to=float(duration), number_of_steps=int(duration * 10))
+        end_slider.pack(side="left", fill="x", expand=True, padx=8)
+        end_slider.set(float(duration))
+
+        def on_start(v):
+            v = float(v)
+            if v >= state["end"] - 0.5:
+                v = max(0.0, state["end"] - 0.5)
+                start_slider.set(v)
+            state["start"] = v
+            start_lbl.configure(text=f"Start: {fmt_time(v)}")
+            update_overlay()
+
+        def on_end(v):
+            v = float(v)
+            if v <= state["start"] + 0.5:
+                v = min(float(duration), state["start"] + 0.5)
+                end_slider.set(v)
+            state["end"] = v
+            end_lbl.configure(text=f"End: {fmt_time(v)}")
+            update_overlay()
+
+        start_slider.configure(command=on_start)
+        end_slider.configure(command=on_end)
+
+        bframe = _ctk.CTkFrame(modal, fg_color="transparent")
+        bframe.pack(fill="x", padx=20, pady=(8, 14))
+
+        def on_full():
+            self._audio_range_result = "full"
+            self._audio_range_event.set()
+            modal.destroy()
+
+        def on_apply():
+            self._audio_range_result = (state["start"], state["end"])
+            self._audio_range_event.set()
+            modal.destroy()
+
+        def on_close():
+            self._audio_range_result = "cancel"
+            self._audio_range_event.set()
+            modal.destroy()
+
+        modal.protocol("WM_DELETE_WINDOW", on_close)
+
+        _ctk.CTkButton(bframe, text="Usa tutto l'audio", command=on_full, fg_color="gray40", width=160).pack(side="left", padx=4)
+        _ctk.CTkButton(bframe, text="Annulla", command=on_close, fg_color="gray30", width=110).pack(side="left", padx=4)
+        _ctk.CTkButton(bframe, text="Analizza selezione  ▶", command=on_apply, width=180).pack(side="right", padx=4)
+
+        update_overlay()
 
     # ─── AI Auto-Edit ───
 

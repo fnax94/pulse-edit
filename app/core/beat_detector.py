@@ -55,16 +55,30 @@ def get_ffmpeg_path():
     return exe
 
 
-def extract_audio(file_path):
-    """Estrai audio in WAV mono temporaneo. Ritorna il path del wav."""
+def extract_audio(file_path, start_s=None, end_s=None):
+    """Estrai audio in WAV mono temporaneo. Ritorna il path del wav.
+
+    Se start_s/end_s sono dati, estrae solo quella porzione (per la feature
+    "select audio range"). I beat times nel detector vengono poi shiftati di
+    +start_s per matchare la timeline DR originale.
+    """
     if not file_path or not os.path.exists(file_path):
         raise FileNotFoundError(f"Audio file not found: {file_path}")
 
     tmp_dir = tempfile.mkdtemp()
     wav_path = os.path.join(tmp_dir, "audio.wav")
 
-    cmd = [
-        get_ffmpeg_path(), "-y", "-i", file_path,
+    cmd = [get_ffmpeg_path(), "-y"]
+    # Ordine importante: -ss prima di -i = seek input veloce; per precision
+    # decoder-accurate usiamo -ss dopo -i ma e' piu' lento. Compromesso:
+    # -ss prima per cut grossolano + -accurate_seek (default in ffmpeg moderno).
+    if start_s is not None and float(start_s) > 0.001:
+        cmd += ["-ss", f"{float(start_s):.3f}"]
+    cmd += ["-i", file_path]
+    if end_s is not None and start_s is not None and float(end_s) > float(start_s):
+        duration = float(end_s) - float(start_s)
+        cmd += ["-t", f"{duration:.3f}"]
+    cmd += [
         "-vn", "-ac", "1", "-ar", "22050", "-acodec", "pcm_s16le",
         wav_path
     ]
@@ -195,16 +209,21 @@ def _refine_beats_linreg(beats_list, audio_duration):
     return [first + i * beat_interval_s for i in range(num_beats)]
 
 
-def detect_beats(file_path, sensitivity=0.5):
+def detect_beats(file_path, sensitivity=0.5, start_s=None, end_s=None):
     """Rileva i beat. Ritorna (bpm, beat_times, upbeats, energy_per_beat).
 
     Tenta beat_this (DNN ISMIR 2024) come algoritmo primario; ricade su
     librosa.beat.beat_track se il modulo non e' disponibile o fallisce.
     sensitivity: 0.0 (pochi beat) -> 1.0 (molti beat). Usata solo nel fallback librosa.
+
+    start_s/end_s: porzione di audio in secondi. Se None, usa l'intero file.
+    I beat_times restituiti sono sempre nel reference frame del file originale
+    (non della porzione), cosi' la timeline DR resta coerente.
     """
     import librosa
 
-    wav_path = extract_audio(file_path)
+    wav_path = extract_audio(file_path, start_s=start_s, end_s=end_s)
+    _offset = float(start_s) if (start_s is not None and float(start_s) > 0.001) else 0.0
 
     try:
         y, sr = librosa.load(wav_path, sr=22050)
@@ -358,6 +377,13 @@ def detect_beats(file_path, sensitivity=0.5):
             else:
                 energy_per_beat = [0.5] * len(energy_per_beat)
 
+        # Se l'utente ha selezionato un range (start_s > 0), shifta i beat
+        # times nel reference frame del file originale cosi' la timeline DR
+        # resta coerente.
+        if _offset > 0:
+            beats_list = [b + _offset for b in beats_list]
+            upbeats = [u + _offset for u in upbeats]
+
         return bpm, beats_list, upbeats, energy_per_beat
     finally:
         try:
@@ -365,3 +391,39 @@ def detect_beats(file_path, sensitivity=0.5):
             os.rmdir(os.path.dirname(wav_path))
         except OSError:
             pass
+
+
+def get_waveform_peaks(file_path, num_bins=1000, max_duration_s=None):
+    """Ritorna (peaks, duration_s) per drawing waveform in UI.
+
+    peaks: lista di float 0..1 di lunghezza num_bins, rappresentano l'inviluppo
+    audio (max abs per bin). duration_s: durata totale dell'audio in secondi.
+
+    Veloce: ~0.5-2s per file mediante decimation con librosa.
+    """
+    import librosa
+    import numpy as np
+    # Carica audio a sample rate basso (8 kHz basta per draw waveform)
+    duration = None
+    if max_duration_s and float(max_duration_s) > 0:
+        duration = float(max_duration_s)
+    y, sr = librosa.load(file_path, sr=8000, mono=True, duration=duration)
+    if len(y) == 0:
+        return [0.0] * num_bins, 0.0
+    total_duration = len(y) / sr
+    # Bin l'audio in num_bins finestre, prendi max abs per bin
+    bin_size = max(1, len(y) // num_bins)
+    peaks = []
+    for i in range(num_bins):
+        start = i * bin_size
+        end = min(len(y), start + bin_size)
+        if start >= len(y):
+            peaks.append(0.0)
+            continue
+        chunk = y[start:end]
+        peaks.append(float(np.abs(chunk).max()))
+    # Normalizza
+    mx = max(peaks) if peaks else 1.0
+    if mx > 0:
+        peaks = [p / mx for p in peaks]
+    return peaks, total_duration
