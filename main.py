@@ -87,7 +87,25 @@ def main():
             enabled=telemetry.load_opt_out("pulseedit"),
             install_excepthook=True,
         )
-        telemetry.report_event("boot")
+        # Boot event include lo stato dell'integrazione Resolve cosi' sappiamo
+        # subito se l'utente puo' usare il plugin (Fusion/Scripting trovati) o no.
+        boot_meta = {}
+        try:
+            from app.core.resolve_bridge import run_health_check
+            hc = run_health_check()
+            boot_meta["resolve_script_ok"] = bool(hc.get("resolve_script_ok"))
+            boot_meta["ffmpeg_ok"] = bool(hc.get("ffmpeg_ok"))
+            boot_meta["resolve_script_path"] = (hc.get("resolve_script_path") or "")[:200]
+        except Exception as _hc_err:
+            boot_meta["health_check_error"] = str(_hc_err)[:200]
+        telemetry.report_event("boot", boot_meta)
+        # Alert immediato se DR scripting NON trovato — questo e' il blocker n.1
+        if not boot_meta.get("resolve_script_ok"):
+            telemetry.report_event("license_fail", {
+                "kind": "resolve_script_not_found",
+                "message": "DaVinciResolveScript.py not found — plugin will not work",
+                "path_tried": boot_meta.get("resolve_script_path", ""),
+            })
     except Exception:
         pass
 

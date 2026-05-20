@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import os
 import platform
 import re
@@ -24,6 +25,7 @@ import socket
 import ssl
 import sys
 import threading
+import time
 import traceback
 import urllib.error
 import urllib.request
@@ -85,6 +87,9 @@ _PRODUCT = "pulseedit"
 _enabled = True   # rispettato via init(enabled=...) — opt-out
 _excepthook_installed = False
 _excepthook_original: Optional[Any] = None
+_logging_handler_installed = False
+_recent_log_sends: list = []  # timestamps for rate-limit
+_LOG_RATE_LIMIT_PER_MIN = 15  # max 15 logging.ERROR forwards / minute
 
 
 def _device_id() -> str:
@@ -214,11 +219,76 @@ def init(product: str = "pulseedit", enabled: bool = True, install_excepthook: b
 
         _excepthook_installed = True
 
+    # Logging-level capture: ogni logger.error/exception/critical dell'app diventa
+    # automaticamente un workflow_fail event. Cattura quasi tutti gli errori
+    # interni anche quando il codice ha già un try/except che li "swallow".
+    _install_logging_handler()
+
 
 def set_enabled(enabled: bool) -> None:
     """Cambia opt-out a runtime (es. quando l'utente toggla in Settings)."""
     global _enabled
     _enabled = bool(enabled)
+
+
+class _TelemetryLoggingHandler(logging.Handler):
+    """Forwarda ogni log record di livello >=ERROR come workflow_fail event.
+
+    Filtro: solo logger del package "app" (no librerie di terzi). Rate-limit a
+    15 errori / 60s per device per evitare spam loops.
+    """
+    def __init__(self):
+        super().__init__(level=logging.ERROR)
+
+    def emit(self, record):
+        try:
+            # Filtra: solo i nostri logger (logger name starts with 'app' o nostro modulo)
+            logger_name = (record.name or '').lower()
+            if not (logger_name.startswith('app') or logger_name == 'root' or logger_name == '__main__'):
+                return
+            # Rate-limit
+            now = time.time()
+            global _recent_log_sends
+            _recent_log_sends = [t for t in _recent_log_sends if now - t < 60]
+            if len(_recent_log_sends) >= _LOG_RATE_LIMIT_PER_MIN:
+                return
+            _recent_log_sends.append(now)
+
+            # Build payload
+            msg = self.format(record) if not record.exc_info else ''
+            try:
+                base_msg = record.getMessage()
+            except Exception:
+                base_msg = str(record.msg)[:300]
+            stack = ''
+            if record.exc_info:
+                try:
+                    stack = ''.join(traceback.format_exception(*record.exc_info))
+                except Exception:
+                    pass
+            meta = {
+                'logger': record.name[:64],
+                'level': record.levelname,
+                'message': str(base_msg)[:500],
+            }
+            if stack:
+                meta['stack'] = _sanitize_stack(stack)
+            report_event('workflow_fail', meta)
+        except Exception:
+            # MAI propagare exception da un logging handler
+            pass
+
+
+def _install_logging_handler():
+    global _logging_handler_installed
+    if _logging_handler_installed:
+        return
+    try:
+        root = logging.getLogger()
+        root.addHandler(_TelemetryLoggingHandler())
+        _logging_handler_installed = True
+    except Exception:
+        pass
 
 
 def report_event(event: str, meta: Optional[dict] = None) -> None:
