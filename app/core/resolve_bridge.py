@@ -859,6 +859,83 @@ def _start_subprocess_worker():
         return None
 
 
+# --- macOS Tahoe (26+) Full Disk Access workaround ---------------------------
+# Standard copy of Blackmagic's DaVinciResolveScript.py wrapper. It only loads
+# fusionscript.so (via RESOLVE_SCRIPT_LIB or the default /Applications path) —
+# it does NOT read anything else under /Library. We stage our own copy in a
+# user-writable folder so PE can import it WITHOUT touching
+# /Library/Application Support/Blackmagic, which macOS Tahoe (26+) blocks via TCC
+# unless the app has Full Disk Access. fusionscript.so lives in /Applications,
+# which is readable without FDA.
+_RESOLVE_SHIM_SRC = '''import sys
+import os
+
+def load_dynamic(module_name, file_path):
+    import importlib.machinery
+    import importlib.util
+    loader = importlib.machinery.ExtensionFileLoader(module_name, file_path)
+    spec = importlib.util.spec_from_loader(module_name, loader)
+    module = importlib.util.module_from_spec(spec)
+    loader.exec_module(module)
+    return module
+
+script_module = None
+try:
+    import fusionscript as script_module
+except ImportError:
+    lib_path = os.getenv("RESOLVE_SCRIPT_LIB")
+    if lib_path and os.path.exists(lib_path):
+        try:
+            script_module = load_dynamic("fusionscript", lib_path)
+        except ImportError:
+            pass
+    if not script_module:
+        # /Applications first (readable without Full Disk Access on Tahoe),
+        # then the legacy /Library location as a last resort.
+        candidates = [
+            "/Applications/DaVinci Resolve/DaVinci Resolve.app/Contents/Libraries/Fusion/fusionscript.so",
+            "/Library/Application Support/Blackmagic Design/DaVinci Resolve/Developer/Scripting/Modules/fusionscript.so",
+        ]
+        for cand in candidates:
+            if os.path.exists(cand):
+                try:
+                    script_module = load_dynamic("fusionscript", cand)
+                    break
+                except ImportError:
+                    continue
+
+if script_module:
+    sys.modules[__name__] = script_module
+else:
+    raise ImportError("Could not locate fusionscript module dependency")
+'''
+
+
+def _ensure_resolve_shim():
+    """Scrive la copia bundlata del modulo DaVinciResolveScript in una cartella
+    scrivibile dell'utente e ne ritorna il path (o None se fallisce).
+
+    Serve a importare lo scripting di Resolve SENZA leggere
+    /Library/Application Support/Blackmagic, cartella che macOS Tahoe (26+)
+    blocca via TCC quando manca il Full Disk Access (caso "DaVinci Resolve not
+    found" con Studio installato)."""
+    try:
+        base = os.path.expanduser("~/Library/Application Support/PulseEdit/resolve_shim")
+        os.makedirs(base, exist_ok=True)
+        target = os.path.join(base, "DaVinciResolveScript.py")
+        try:
+            current = open(target).read()
+        except OSError:
+            current = None
+        if current != _RESOLVE_SHIM_SRC:
+            with open(target, "w") as f:
+                f.write(_RESOLVE_SHIM_SRC)
+        return base
+    except Exception as e:
+        _log.warning(f"Could not stage bundled Resolve shim: {e}")
+        return None
+
+
 def connect(retries=3, delay=1.5):
     """Connette a DaVinci Resolve con retry. Ritorna l'oggetto resolve o None."""
     global _worker_proxy
@@ -921,6 +998,21 @@ def connect(retries=3, delay=1.5):
 
     _log.info(f"ENV RESOLVE_SCRIPT_API = {os.environ.get('RESOLVE_SCRIPT_API', '(not set)')}")
     _log.info(f"ENV RESOLVE_SCRIPT_LIB = {os.environ.get('RESOLVE_SCRIPT_LIB', '(not set)')}")
+
+    # macOS Tahoe (26+) safe import: stage our bundled DaVinciResolveScript copy
+    # in a user-writable folder and put it FIRST on sys.path, so the import below
+    # never needs to read /Library/Application Support/Blackmagic (TCC-blocked
+    # without Full Disk Access). It loads fusionscript.so from /Applications.
+    # Additive: if staging fails we just fall through to the standard paths.
+    if _IS_MAC:
+        if not os.environ.get("RESOLVE_SCRIPT_LIB", ""):
+            _std_lib = "/Applications/DaVinci Resolve/DaVinci Resolve.app/Contents/Libraries/Fusion/fusionscript.so"
+            if os.path.exists(_std_lib):
+                os.environ["RESOLVE_SCRIPT_LIB"] = _std_lib
+        _shim_dir = _ensure_resolve_shim()
+        if _shim_dir and _shim_dir not in sys.path:
+            sys.path.insert(0, _shim_dir)
+            _log.info(f"Resolve shim staged (Tahoe-safe import): {_shim_dir}")
 
     # Try direct import first (works on macOS and Windows with system Python)
     direct_failed = False
