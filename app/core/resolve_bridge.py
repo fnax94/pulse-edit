@@ -156,8 +156,114 @@ def _find_first_existing(paths):
     return next((p for p in paths if os.path.isdir(p)), paths[0] if paths else "")
 
 
-def _discover_resolve_paths_windows():
-    """Auto-discover DaVinci Resolve install path on Windows via registry + filesystem scan."""
+def _scan_all_drives_windows(resolve_root, _pf, _pf86, _pd, module_paths, lib_paths):
+    """EXPENSIVE all-drive filesystem scan for DaVinciResolveScript.py / fusionscript.dll.
+
+    Probes every drive letter and does a recursive os.walk (depth 5). Each drive's
+    I/O is wrapped in try/except so a disconnected / sleeping network or external
+    drive that does not respond is skipped instead of hanging. Mutates
+    module_paths / lib_paths in place (inserting discovered dirs at the front).
+    """
+    scan_roots = set()
+    if resolve_root:
+        scan_roots.add(resolve_root)
+    for base in [_pf, _pf86, _pd]:
+        try:
+            bm = os.path.join(base, "Blackmagic Design")
+            if os.path.isdir(bm):
+                scan_roots.add(bm)
+        except (PermissionError, OSError):
+            pass
+    try:
+        import string
+        for letter in string.ascii_uppercase:
+            drive = f"{letter}:\\"
+            # Wrap each drive's probing so an unresponsive drive can't hang us.
+            try:
+                if not os.path.exists(drive):
+                    continue
+                for subfolder in ["Program Files", "Program Files (x86)", "Blackmagic Design"]:
+                    bm = os.path.join(drive, subfolder, "Blackmagic Design")
+                    if os.path.isdir(bm):
+                        scan_roots.add(bm)
+                bm_root = os.path.join(drive, "Blackmagic Design")
+                if os.path.isdir(bm_root):
+                    scan_roots.add(bm_root)
+                for pf in ["Program Files", "Program Files (x86)"]:
+                    resolve_dir = os.path.join(drive, pf, "Blackmagic Design", "DaVinci Resolve")
+                    if os.path.isdir(resolve_dir):
+                        scan_roots.add(resolve_dir)
+                # Scan root-level folders that might contain Resolve (e.g. D:\DaVinci)
+                try:
+                    for entry in os.listdir(drive):
+                        if "davinci" in entry.lower() or "resolve" in entry.lower() or "blackmagic" in entry.lower():
+                            candidate = os.path.join(drive, entry)
+                            if os.path.isdir(candidate):
+                                scan_roots.add(candidate)
+                except (PermissionError, OSError):
+                    pass
+            except (PermissionError, OSError):
+                continue
+    except Exception:
+        pass
+    for root_dir in scan_roots:
+        try:
+            for dirpath, dirnames, filenames in os.walk(root_dir):
+                if "DaVinciResolveScript.py" in filenames:
+                    if dirpath not in module_paths:
+                        module_paths.insert(0, dirpath)
+                        _log.info(f"Filesystem scan found module: {dirpath}")
+                for dll_name in ["fusionscript.dll", "FusionScript.dll", "fusionscript64.dll"]:
+                    if dll_name in filenames:
+                        if dirpath not in lib_paths:
+                            lib_paths.insert(0, dirpath)
+                            _log.info(f"Filesystem scan found lib ({dll_name}): {dirpath}")
+                        break
+                depth = dirpath.replace(root_dir, "").count(os.sep)
+                if depth > 5:
+                    dirnames.clear()
+        except (PermissionError, OSError):
+            pass
+
+
+def _cache_discovered_resolve_root(module_paths):
+    """Cache the Resolve install root derived from a scan-discovered module path.
+
+    Walks up from a discovered .../Developer/Scripting/Modules (or similar) dir to
+    the install root and saves it to resolve_config.json so the next launch finds
+    it via the cheap custom-path branch (step 0) and never runs the all-drive scan
+    again. Best-effort: never raises, never overwrites an existing user config.
+    """
+    try:
+        if load_custom_resolve_path():
+            return  # don't clobber a user-set path
+        for p in module_paths:
+            if not (p and os.path.isdir(p)):
+                continue
+            norm = p.lower().replace("/", os.sep)
+            # Trim known module subpaths back to the install root.
+            for suffix in [
+                os.sep.join(["developer", "scripting", "modules"]),
+                os.sep.join(["support", "developer", "scripting", "modules"]),
+                os.sep.join(["scripting", "modules"]),
+            ]:
+                idx = norm.rfind(suffix)
+                if idx != -1:
+                    root = p[:idx].rstrip("/\\" + os.sep)
+                    if root and os.path.isdir(root):
+                        save_custom_resolve_path(root)
+                        return
+    except Exception:
+        pass
+
+
+def _discover_resolve_paths_windows(force_scan=False):
+    """Auto-discover DaVinci Resolve install path on Windows via registry + filesystem scan.
+
+    Cheap sources (custom path, registry, hardcoded Program Files paths, env vars)
+    always run. The expensive all-drive filesystem scan only runs when force_scan
+    is True or when the cheap sources found no existing module path.
+    """
     module_paths = []
     lib_paths = []
     resolve_root = None
@@ -236,60 +342,18 @@ def _discover_resolve_paths_windows():
         lib_paths.append(os.path.join(bd, "Blackmagic Design", "DaVinci Resolve"))
 
     # 4. Filesystem scan: look for DaVinciResolveScript.py and fusionscript.dll
-    #    Scan ALL drives (D:, E:, etc.) not just C:
-    scan_roots = set()
-    if resolve_root:
-        scan_roots.add(resolve_root)
-    for base in [_pf, _pf86, _pd]:
-        bm = os.path.join(base, "Blackmagic Design")
-        if os.path.isdir(bm):
-            scan_roots.add(bm)
-    try:
-        import string
-        for letter in string.ascii_uppercase:
-            drive = f"{letter}:\\"
-            if not os.path.exists(drive):
-                continue
-            for subfolder in ["Program Files", "Program Files (x86)", "Blackmagic Design"]:
-                bm = os.path.join(drive, subfolder, "Blackmagic Design")
-                if os.path.isdir(bm):
-                    scan_roots.add(bm)
-            bm_root = os.path.join(drive, "Blackmagic Design")
-            if os.path.isdir(bm_root):
-                scan_roots.add(bm_root)
-            for pf in ["Program Files", "Program Files (x86)"]:
-                resolve_dir = os.path.join(drive, pf, "Blackmagic Design", "DaVinci Resolve")
-                if os.path.isdir(resolve_dir):
-                    scan_roots.add(resolve_dir)
-            # Scan root-level folders that might contain Resolve (e.g. D:\DaVinci)
-            try:
-                for entry in os.listdir(drive):
-                    if "davinci" in entry.lower() or "resolve" in entry.lower() or "blackmagic" in entry.lower():
-                        candidate = os.path.join(drive, entry)
-                        if os.path.isdir(candidate):
-                            scan_roots.add(candidate)
-            except (PermissionError, OSError):
-                pass
-    except Exception:
-        pass
-    for root_dir in scan_roots:
-        try:
-            for dirpath, dirnames, filenames in os.walk(root_dir):
-                if "DaVinciResolveScript.py" in filenames:
-                    if dirpath not in module_paths:
-                        module_paths.insert(0, dirpath)
-                        _log.info(f"Filesystem scan found module: {dirpath}")
-                for dll_name in ["fusionscript.dll", "FusionScript.dll", "fusionscript64.dll"]:
-                    if dll_name in filenames:
-                        if dirpath not in lib_paths:
-                            lib_paths.insert(0, dirpath)
-                            _log.info(f"Filesystem scan found lib ({dll_name}): {dirpath}")
-                        break
-                depth = dirpath.replace(root_dir, "").count(os.sep)
-                if depth > 5:
-                    dirnames.clear()
-        except (PermissionError, OSError):
-            pass
+    #    Scan ALL drives (D:, E:, etc.) not just C:.
+    #    EXPENSIVE (probes every drive letter + recursive os.walk) — only run it
+    #    when the cheap sources above (registry / hardcoded / custom) did not
+    #    already turn up an existing module path. This keeps the import/main
+    #    thread from blocking for seconds on disconnected / sleeping network or
+    #    external drives. When forced (re-detect) it always runs.
+    cheap_found = any(os.path.isdir(p) for p in module_paths)
+    if force_scan or not cheap_found:
+        _scan_all_drives_windows(resolve_root, _pf, _pf86, _pd, module_paths, lib_paths)
+        # Cache the discovered Resolve root so the next launch picks it up via
+        # the cheap custom-path branch (step 0) and skips this scan entirely.
+        _cache_discovered_resolve_root(module_paths)
 
     # 5. Env var override
     env_api = os.environ.get("RESOLVE_SCRIPT_API", "")

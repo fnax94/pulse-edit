@@ -7,13 +7,6 @@ on:
         description: 'Release tag to upload to (default: latest pulse-edit-v* release)'
         required: false
         default: ''
-  push:
-    branches: [main]
-    paths:
-      - "main.py"
-      - "app/**"
-      - "resources/**"
-      - ".github/workflows/build-windows.yml"
 
 permissions:
   contents: write

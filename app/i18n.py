@@ -68,6 +68,7 @@ STRINGS = {
         "license_activated": "License activated!",
         # License API
         "key_not_found": "License key not found.",
+        "key_already_used": "This key is already activated on another machine. Deactivate it there first, or email support@pulseedit.com.",
         "key_invalid": "Invalid license key.",
         "error_generic": "Error: {msg}",
         "offline_error": "Unable to verify online. Check your connection.",
@@ -239,6 +240,7 @@ STRINGS = {
         "license_activated": "Licenza attivata!",
         # License API
         "key_not_found": "Chiave di licenza non trovata.",
+        "key_already_used": "Questa chiave e' gia' attiva su un'altra macchina. Disattivala prima da li', oppure scrivi a support@pulseedit.com.",
         "key_invalid": "Chiave non valida.",
         "error_generic": "Errore: {msg}",
         "offline_error": "Impossibile verificare online. Controlla la connessione.",

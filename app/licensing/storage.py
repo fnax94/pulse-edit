@@ -213,6 +213,42 @@ def _update_cache(key):
         json.dump(cache, f)
 
 
+# --- Stable instance id (persisted, hostname-independent) ---
+
+def load_instance_id():
+    """Carica l'instance-id stabile e persistente (None se mai creato)."""
+    if IS_WINDOWS:
+        return _win_load_credential("instance")
+    try:
+        result = subprocess.run(
+            ["security", "find-generic-password", "-a", APP_NAME, "-s", "instance", "-w"],
+            capture_output=True, text=True, timeout=10
+        )
+        if result.returncode == 0:
+            return result.stdout.strip()
+    except subprocess.TimeoutExpired:
+        pass
+    return None
+
+
+def save_instance_id(iid):
+    """Salva l'instance-id stabile (Credential Manager / Keychain)."""
+    if IS_WINDOWS:
+        return bool(_win_save_credential("instance", iid))
+    try:
+        subprocess.run(
+            ["security", "delete-generic-password", "-a", APP_NAME, "-s", "instance"],
+            capture_output=True, timeout=10
+        )
+        result = subprocess.run(
+            ["security", "add-generic-password", "-a", APP_NAME, "-s", "instance", "-w", iid],
+            capture_output=True, text=True, timeout=10
+        )
+        return result.returncode == 0
+    except subprocess.TimeoutExpired:
+        return False
+
+
 # --- Trial counter (multi-location, tamper-resistant) ---
 
 def _encode_count(n):

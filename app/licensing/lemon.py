@@ -18,10 +18,25 @@ _SSL_CTX = ssl.create_default_context(cafile=certifi.where())
 
 
 def _get_instance_id():
-    """Genera un ID univoco per questa macchina."""
-    node = platform.node()
-    mac_id = hashlib.sha256(node.encode()).hexdigest()[:16]
-    return f"pulseedit-{mac_id}"
+    """ID stabile e persistente per questa installazione.
+
+    In passato era derivato dall'hostname (sha256(platform.node())), il che
+    bloccava fuori i clienti che rinominavano il Mac o reinstallavano l'OS.
+    Ora l'ID viene generato una volta e persistito (Keychain/Credential
+    Manager), cosi' resta invariato anche se l'hostname cambia.
+
+    Backward-compatible: su una macchina che ha gia' una licenza attivata col
+    vecchio schema riusiamo l'ID hostname-based, cosi' il machine_id gia'
+    registrato sul server NON cambia (zero lockout per chi ha gia' attivato)."""
+    import uuid
+    from app.licensing import storage
+    iid = storage.load_instance_id()
+    if iid:
+        return iid
+    legacy = f"pulseedit-{hashlib.sha256(platform.node().encode()).hexdigest()[:16]}"
+    iid = legacy if storage.load_license() else f"pulseedit-{uuid.uuid4().hex[:16]}"
+    storage.save_instance_id(iid)
+    return iid
 
 
 def _short_platform():

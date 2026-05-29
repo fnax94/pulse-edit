@@ -133,10 +133,16 @@ jobs:
       - name: Patch Info.plist + codesign + notarize
         env:
           IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          TAG: ${{ github.event.inputs.release_tag }}
         run: |
           APP="dist/PulseEdit.app"
+          VERSION="${TAG#pulse-edit-v}"
           /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier com.abtools.pulseedit" "$APP/Contents/Info.plist" 2>/dev/null \
             || /usr/libexec/PlistBuddy -c "Add :CFBundleIdentifier string com.abtools.pulseedit" "$APP/Contents/Info.plist"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VERSION" "$APP/Contents/Info.plist" 2>/dev/null \
+            || /usr/libexec/PlistBuddy -c "Add :CFBundleShortVersionString string $VERSION" "$APP/Contents/Info.plist"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $VERSION" "$APP/Contents/Info.plist" 2>/dev/null \
+            || /usr/libexec/PlistBuddy -c "Add :CFBundleVersion string $VERSION" "$APP/Contents/Info.plist"
           /usr/libexec/PlistBuddy -c "Set :NSMicrophoneUsageDescription 'Pulse Edit analizza file audio per generare beat markers.'" "$APP/Contents/Info.plist" 2>/dev/null \
             || /usr/libexec/PlistBuddy -c "Add :NSMicrophoneUsageDescription string 'Pulse Edit analizza file audio per generare beat markers.'" "$APP/Contents/Info.plist"
           /usr/libexec/PlistBuddy -c "Set :NSAppleEventsUsageDescription 'Pulse Edit invia comandi a DaVinci Resolve per importare i marker.'" "$APP/Contents/Info.plist" 2>/dev/null \
@@ -184,6 +190,10 @@ jobs:
             "$DMG" \
             "$APP"
           codesign --force --sign "$IDENTITY" --timestamp "$DMG"
+
+          xcrun notarytool submit "$DMG" --keychain-profile "$KEYCHAIN_PROFILE" --wait
+          xcrun stapler staple "$DMG"
+          xcrun stapler validate "$DMG"
           ls -la "$DMG"
 
       - name: Upload to GitHub release

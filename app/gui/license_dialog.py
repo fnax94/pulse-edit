@@ -1,5 +1,7 @@
 """License activation dialog."""
 
+import threading
+
 import customtkinter as ctk
 from app.licensing import lemon, storage
 from app.i18n import t
@@ -44,10 +46,14 @@ class LicenseDialog(ctk.CTkToplevel):
 
         self.activate_btn.configure(state="disabled", text=t("verifying"))
         self.status_label.configure(text="", text_color="gray")
-        self.update()
 
-        valid, message = lemon.verify_license(key)
+        def worker():
+            valid, message = lemon.verify_license(key)
+            self.after(0, lambda: self._on_verify_result(key, valid, message))
 
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _on_verify_result(self, key, valid, message):
         if valid:
             storage.save_license(key)
             self.status_label.configure(text=t("license_activated"), text_color="green")
