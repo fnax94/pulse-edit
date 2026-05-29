@@ -446,11 +446,13 @@ def diagnose():
         lines.append("Module paths searched:")
         for p in _MAC_MODULE_PATHS:
             exists = os.path.isdir(p)
-            lines.append(f"  {'[OK]' if exists else '[--]'} {p}")
+            dvr = os.path.exists(os.path.join(p, "DaVinciResolveScript.py"))
+            lines.append(f"  {'[OK]' if exists else '[--]'} {p} {'(DaVinciResolveScript.py found)' if dvr else ''}")
         lines.append("Library paths searched:")
         for p in _MAC_LIB_PATHS:
             exists = os.path.isdir(p)
-            lines.append(f"  {'[OK]' if exists else '[--]'} {p}")
+            so_ok = os.path.exists(os.path.join(p, "fusionscript.so")) or os.path.exists(os.path.join(p, "libfusionscript.so"))
+            lines.append(f"  {'[OK]' if exists else '[--]'} {p} {'(fusionscript.so found)' if so_ok else ''}")
     try:
         from app.__version__ import __version__ as _app_ver
     except Exception:

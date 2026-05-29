@@ -520,8 +520,14 @@ class MainWindow(ctk.CTk):
             tips.append("• Resolve not detected — close and reopen DaVinci Resolve, then click Refresh")
         if "RESOLVE_SCRIPT_LIB = (not set)" in info:
             tips.append("• fusionscript.dll/so not found — use Browse below to set your Resolve install folder")
-        if "(DaVinciResolveScript.py found)" not in info:
-            tips.append("• DaVinciResolveScript.py not found — you may have DaVinci Resolve Free (scripting requires Studio)")
+        if "(fusionscript.so found)" in info and "(DaVinciResolveScript.py found)" not in info:
+            tips.append("• Resolve detected but Scripting module missing. Likely: DR Free (scripting requires Studio), "
+                        "or DR Studio install incomplete. On macOS Tahoe (26+): System Settings → Privacy & Security → "
+                        "Full Disk Access → enable PulseEdit.app, then relaunch PE.")
+        elif "(fusionscript.dll found)" in info and "(DaVinciResolveScript.py found)" not in info:
+            tips.append("• Resolve detected but Scripting module missing — install DR Studio (Free does not include scripting).")
+        elif "(DaVinciResolveScript.py found)" not in info:
+            tips.append("• DaVinci Resolve not detected — open DR Studio first, then click Refresh.")
         if not tips:
             tips.append("• Everything looks good! Click Refresh to try connecting.")
 
