@@ -37,10 +37,11 @@ else:
 _fh = logging.FileHandler(_log_path, mode="w")
 _fh.setFormatter(logging.Formatter("%(asctime)s %(message)s"))
 _log.addHandler(_fh)
-from app.core import resolve_bridge, beat_detector, editor, mood_analyzer
+from app.core import resolve_bridge, beat_detector, editor, mood_analyzer, updater
 from app.licensing import storage
 from app.gui.license_dialog import LicenseDialog
 from app.i18n import t, set_language, get_language, available_languages
+from app.__version__ import __version__
 
 _LANG_MAP = {name: code for code, name in available_languages()}
 
@@ -128,6 +129,9 @@ class MainWindow(ctk.CTk):
         self.trial_label.pack(side="right")
         self.trial_label.bind("<Button-1>", lambda e: self._on_trial_click())
         self._update_trial_label()
+
+        # Check for a newer release in the background (non-blocking, fail-safe).
+        self.after(3500, self._check_for_updates_async)
 
         self.progress = ctk.CTkProgressBar(bottom, mode="determinate", height=6)
         self.progress.pack(fill="x", pady=(6, 2))
@@ -665,6 +669,32 @@ class MainWindow(ctk.CTk):
         self._update_trial_label()
 
     # ─── Trial / License ───
+
+    def _check_for_updates_async(self):
+        """Background check for a newer release; never blocks or crashes the UI."""
+        def _work():
+            try:
+                info = updater.check_for_update(__version__)
+            except Exception:
+                info = None
+            if info:
+                latest = info.get("latest", "")
+                url = info.get("url", updater.DOWNLOAD_URL)
+                self.after(0, lambda: self._show_update_dialog(latest, url))
+        threading.Thread(target=_work, daemon=True).start()
+
+    def _show_update_dialog(self, latest, url):
+        """Prompt that a newer version is available; open the website on Yes."""
+        try:
+            from tkinter import messagebox
+            if messagebox.askyesno(
+                t("update_available_title"),
+                t("update_available_msg", latest=latest, current=__version__),
+            ):
+                import webbrowser
+                webbrowser.open(url)
+        except Exception as e:
+            _log.info(f"update dialog skipped: {type(e).__name__}: {e}")
 
     def _update_trial_label(self):
         if self.licensed:
