@@ -1176,8 +1176,9 @@ class MainWindow(ctk.CTk):
                 import traceback
                 _log.error(f"ai_edit error: {traceback.format_exc()}")
                 self._edit_running = False
+                err_msg = str(e)
                 self.after(0, lambda: self._set_busy(
-                    False, t("error_generic", msg=str(e))))
+                    False, t("error_generic", msg=err_msg)))
 
         threading.Thread(target=_do, daemon=True).start()
 
@@ -1383,8 +1384,9 @@ class MainWindow(ctk.CTk):
             _log.error(f"auto_edit error: {traceback.format_exc()}")
             traceback.print_exc()
             self._edit_running = False
+            err_msg = str(e)
             self.after(0, lambda: self._set_busy(
-                False, t("error_generic", msg=str(e))
+                False, t("error_generic", msg=err_msg)
             ))
             try:
                 from app import telemetry
