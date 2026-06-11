@@ -122,6 +122,7 @@ def _sample_easing(ease_type, num_samples=10):
     return points
 
 import platform as _platform
+import re as _re
 import subprocess as _subprocess
 import time as _time
 import logging as _logging
@@ -392,6 +393,7 @@ def _discover_resolve_paths_mac():
     ])
     lib_paths.extend([
         "/Applications/DaVinci Resolve/DaVinci Resolve.app/Contents/Libraries/Fusion",
+        "/Applications/DaVinci Resolve Studio.app/Contents/Libraries/Fusion",  # Mac App Store (v1.5.10)
         os.path.expanduser("~/Applications/DaVinci Resolve/DaVinci Resolve.app/Contents/Libraries/Fusion"),
         "/opt/resolve/libs/Fusion",
     ])
@@ -447,6 +449,99 @@ def _is_resolve_running():
         return False
 
 
+# ─── v1.5.10: ambiente Resolve leggibile SENZA connessione IPC ────────────────
+# Caso John Kelly (giu 2026): import OK + scriptapp None = Resolve rifiuta
+# l'handshake. Le cause (pref External scripting=None, edizione Free, doppio
+# install) sono tutte diagnosticabili da file su disco — questi helper le
+# espongono a diagnose() e alla telemetria di boot.
+
+_MAS_STUDIO_LIB = "/Applications/DaVinci Resolve Studio.app/Contents/Libraries/Fusion/fusionscript.so"
+
+
+def _resolve_running_binary():
+    """Path del binario Resolve in esecuzione (macOS), '' se non rilevabile."""
+    if not _IS_MAC:
+        return ""
+    try:
+        out = _subprocess.check_output(["pgrep", "-ifl", "[Rr]esolve"], text=True, timeout=5)
+        marker = ".app/Contents/MacOS/Resolve"
+        for line in out.splitlines():
+            parts = line.split(None, 1)
+            if len(parts) < 2:
+                continue
+            cmd = parts[1]
+            idx = cmd.find(marker)
+            if idx != -1:
+                return cmd[: idx + len(marker)]
+    except Exception:
+        pass
+    return ""
+
+
+def _read_resolve_scripting_mode():
+    """Legge System.Scripting.Mode dal config.dat di Resolve (plain text).
+
+    Ritorna (raw, label): ('1', 'Local'), ('0', 'None (external scripting DISABLED)'),
+    (None, '<motivo>') se non leggibile. La pref e' quella di
+    Preferences → System → General → 'External scripting using'."""
+    if not _IS_MAC:
+        return None, "unknown (non-mac)"
+    cfg = os.path.expanduser("~/Library/Preferences/Blackmagic Design/DaVinci Resolve/config.dat")
+    try:
+        with open(cfg, "r", errors="ignore") as f:
+            content = f.read()
+    except FileNotFoundError:
+        return None, "config.dat not found"
+    except Exception as e:
+        return None, f"unreadable ({type(e).__name__})"
+    m = _re.search(r"System\.Scripting\.Mode\s*=\s*\"?(\w+)\"?", content)
+    if not m:
+        return None, "not present in config.dat"
+    raw = m.group(1).strip()
+    labels = {"0": "None (external scripting DISABLED)", "1": "Local", "2": "Network"}
+    return raw, labels.get(raw, raw)
+
+
+def _read_resolve_edition_from_log():
+    """Edizione+versione DR dall'ultima riga 'Running DaVinci Resolve …' del log
+    di Resolve (es. 'DaVinci Resolve Studio v20.3.2.0009'). '' se non leggibile.
+    La free logga senza 'Studio' — unico modo per distinguerle su macOS (i bundle
+    dmg free e Studio sono identici: stesso path, nome e bundle-id)."""
+    if not _IS_MAC:
+        return ""
+    log_p = os.path.expanduser(
+        "~/Library/Application Support/Blackmagic Design/DaVinci Resolve/logs/davinci_resolve.log")
+    try:
+        last = ""
+        with open(log_p, "r", errors="ignore") as f:
+            # Log potenzialmente grande (cresce finche' Resolve gira): leggi solo
+            # gli ultimi 4MB — la riga 'Running…' appare a ogni avvio di Resolve.
+            f.seek(0, os.SEEK_END)
+            size = f.tell()
+            f.seek(max(0, size - 4 * 1024 * 1024))
+            for line in f:
+                if "Running DaVinci Resolve" in line:
+                    last = line.strip()
+        if last:
+            m = _re.search(r"Running (DaVinci Resolve[^,\n]*)", last)
+            return (m.group(1).strip() if m else last)[:120]
+    except Exception:
+        pass
+    return ""
+
+
+def _installed_resolve_bundles():
+    """Bundle DaVinci installati in /Applications (rileva doppi install dmg+MAS)."""
+    if not _IS_MAC:
+        return []
+    candidates = [
+        "/Applications/DaVinci Resolve/DaVinci Resolve.app",
+        "/Applications/DaVinci Resolve Studio.app",
+        "/Applications/DaVinci Resolve.app",
+    ]
+    return [p for p in candidates if os.path.isdir(p)]
+
+
 def run_health_check():
     """Startup health check — logs status of critical dependencies.
 
@@ -485,6 +580,20 @@ def run_health_check():
 
     _log.info(f"Health check — DaVinciResolveScript: {'OK' if result['resolve_script_ok'] else 'NOT FOUND'}"
               f" at {result['resolve_script_path'] or '(none)'}")
+
+    # v1.5.10 — contesto Resolve senza IPC: edizione (Studio/free), pref external
+    # scripting e doppi install. Vanno in telemetria di boot: mai piu' casi
+    # support ciechi sull'edizione (caso John Kelly).
+    try:
+        result["resolve_running"] = _is_resolve_running()
+        result["resolve_edition"] = _read_resolve_edition_from_log()
+        _mode_raw, _mode_label = _read_resolve_scripting_mode()
+        result["resolve_scripting_mode"] = _mode_raw if _mode_raw is not None else _mode_label
+        result["resolve_installs"] = len(_installed_resolve_bundles())
+        _log.info(f"Health check — DR edition: {result['resolve_edition'] or '(unknown)'} | "
+                  f"scripting mode: {result['resolve_scripting_mode']} | installs: {result['resolve_installs']}")
+    except Exception as e:
+        _log.warning(f"Health check — resolve env probe failed: {e}")
 
     return result
 
@@ -583,8 +692,39 @@ def diagnose():
                 except Exception:
                     pass
             else:
+                # NB: main_window._show_diagnostics matcha ESATTAMENTE la
+                # stringa "scriptapp('Resolve'): None" per il tip dedicato —
+                # se cambi la quotatura qui, aggiorna anche il match li'.
                 lines.append(f"scriptapp('Resolve'): None")
-                lines.append("  → Open a project with a timeline in DaVinci Resolve Edit page")
+                # v1.5.10 — import OK + scriptapp None = Resolve RIFIUTA l'IPC
+                # (non e' "Resolve non trovato" e NON dipende da progetto aperto).
+                lines.append("  → Resolve REFUSED the scripting connection (library loaded fine).")
+                _so_file = getattr(_dvr_test, "__file__", "") or "(unknown)"
+                lines.append(f"  fusionscript loaded from: {_so_file}")
+                _bin = _resolve_running_binary()
+                if _bin:
+                    lines.append(f"  Resolve binary running:   {_bin}")
+                    def _bundle_root(p):
+                        i = p.find(".app/")
+                        return p[: i + 4] if i != -1 else ""
+                    if (_bundle_root(_so_file) and _bundle_root(_bin)
+                            and _bundle_root(_so_file) != _bundle_root(_bin)):
+                        lines.append("  [!] MISMATCH: loaded library belongs to a DIFFERENT install "
+                                     "than the running app — remove the duplicate install.")
+                _mode_label = _read_resolve_scripting_mode()[1]
+                lines.append(f"  External scripting pref:  {_mode_label}")
+                _edition = _read_resolve_edition_from_log()
+                if _edition:
+                    lines.append(f"  Resolve edition (DR log): {_edition}")
+                    if "Studio" not in _edition:
+                        lines.append("  [!] FREE edition detected — external scripting requires "
+                                     "DaVinci Resolve STUDIO.")
+                _bundles = _installed_resolve_bundles()
+                if len(_bundles) > 1:
+                    lines.append(f"  [!] Multiple Resolve installs: {', '.join(_bundles)}")
+                lines.append("  FIX: DaVinci Resolve → Preferences → System → General →")
+                lines.append("       'External scripting using' = Local → Save → RESTART Resolve.")
+                lines.append("       (Requires the STUDIO edition — check menu DaVinci Resolve → About.)")
         except Exception as _e:
             lines.append(f"scriptapp error: {type(_e).__name__}: {_e}")
     except ImportError as _e:
@@ -894,6 +1034,7 @@ except ImportError:
         # then the legacy /Library location as a last resort.
         candidates = [
             "/Applications/DaVinci Resolve/DaVinci Resolve.app/Contents/Libraries/Fusion/fusionscript.so",
+            "/Applications/DaVinci Resolve Studio.app/Contents/Libraries/Fusion/fusionscript.so",
             "/Library/Application Support/Blackmagic Design/DaVinci Resolve/Developer/Scripting/Modules/fusionscript.so",
         ]
         for cand in candidates:
@@ -936,12 +1077,35 @@ def _ensure_resolve_shim():
         return None
 
 
-def connect(retries=3, delay=1.5):
-    """Connette a DaVinci Resolve con retry. Ritorna l'oggetto resolve o None."""
-    global _worker_proxy
+# v1.5.10 — motivo dell'ultimo fallimento di connect(), per messaggi UI distinti:
+#   'not_running'   Resolve non in esecuzione
+#   'import_failed' modulo scripting non importabile (caso Tahoe TCC / install rotta)
+#   'ipc_refused'   import OK ma Resolve rifiuta l'handshake (pref scripting=None,
+#                   edizione free, doppio install) — caso John Kelly
+LAST_ERROR = None
 
-    if not _is_resolve_running():
+# RESOLVE_SCRIPT_LIB: ricordiamo se l'abbiamo settata NOI, cosi' i Refresh
+# successivi possono rivalutarla (prima era sticky: una scelta sbagliata al
+# primo giro — es. .so dell'install sbagliato con mdfind — restava per sempre).
+_lib_set_by_us = False
+
+
+def connect(retries=3, delay=1.5):
+    """Connette a DaVinci Resolve con retry. Ritorna l'oggetto resolve o None.
+
+    In caso di fallimento setta il modulo-level LAST_ERROR (vedi sopra)."""
+    global _worker_proxy, LAST_ERROR, _lib_set_by_us
+    LAST_ERROR = None
+
+    resolve_running = _is_resolve_running()
+    if not resolve_running:
         _log.warning("Resolve process not detected — trying to connect anyway")
+
+    # Se RESOLVE_SCRIPT_LIB l'abbiamo scelta noi in un connect() precedente,
+    # azzerala e rivaluta da capo (un Refresh deve poter correggere la scelta).
+    if _lib_set_by_us and os.environ.get("RESOLVE_SCRIPT_LIB"):
+        os.environ.pop("RESOLVE_SCRIPT_LIB", None)
+        _lib_set_by_us = False
 
     # Add all known module paths to sys.path
     if _IS_WINDOWS:
@@ -993,6 +1157,7 @@ def connect(retries=3, delay=1.5):
                         lib = os.path.join(lp, lib_name)
                         if os.path.exists(lib):
                             os.environ["RESOLVE_SCRIPT_LIB"] = lib
+                            _lib_set_by_us = True
                             _log.info(f"Found script lib: {lib}")
                             break
 
@@ -1006,9 +1171,17 @@ def connect(retries=3, delay=1.5):
     # Additive: if staging fails we just fall through to the standard paths.
     if _IS_MAC:
         if not os.environ.get("RESOLVE_SCRIPT_LIB", ""):
-            _std_lib = "/Applications/DaVinci Resolve/DaVinci Resolve.app/Contents/Libraries/Fusion/fusionscript.so"
-            if os.path.exists(_std_lib):
-                os.environ["RESOLVE_SCRIPT_LIB"] = _std_lib
+            # v1.5.10: considera anche il bundle Mac App Store (DaVinci Resolve
+            # Studio.app) — prima era invisibile e con doppio install lo shim
+            # caricava il .so dell'install sbagliato.
+            for _std_lib in [
+                "/Applications/DaVinci Resolve/DaVinci Resolve.app/Contents/Libraries/Fusion/fusionscript.so",
+                _MAS_STUDIO_LIB,
+            ]:
+                if os.path.exists(_std_lib):
+                    os.environ["RESOLVE_SCRIPT_LIB"] = _std_lib
+                    _lib_set_by_us = True
+                    break
         _shim_dir = _ensure_resolve_shim()
         if _shim_dir and _shim_dir not in sys.path:
             sys.path.insert(0, _shim_dir)
@@ -1016,9 +1189,11 @@ def connect(retries=3, delay=1.5):
 
     # Try direct import first (works on macOS and Windows with system Python)
     direct_failed = False
+    imported_ok = False
     for attempt in range(retries):
         try:
             import DaVinciResolveScript as dvr
+            imported_ok = True
             _log.info(f"DaVinciResolveScript imported OK (attempt {attempt + 1})")
             resolve = dvr.scriptapp("Resolve")
             if resolve:
@@ -1028,6 +1203,7 @@ def connect(retries=3, delay=1.5):
         except ImportError as e:
             _log.error(f"Cannot import DaVinciResolveScript: {e}")
             if not _IS_WINDOWS:
+                LAST_ERROR = 'import_failed'
                 return None
             direct_failed = True
             break
@@ -1054,9 +1230,28 @@ def connect(retries=3, delay=1.5):
                 _log.info(f"Connected to Resolve via subprocess worker")
                 return _worker_proxy
             _log.error(f"Subprocess worker connect failed: {resp.get('error')}")
+        # Classifica: worker partito ma connect rifiutato = IPC; worker mai
+        # partito = problema d'ambiente, non di Resolve.
+        if not resolve_running:
+            LAST_ERROR = 'not_running'
+        elif _worker_proxy:
+            LAST_ERROR = 'ipc_refused'
+        else:
+            LAST_ERROR = 'import_failed'
         return None
 
-    _log.error("All connection attempts failed")
+    # v1.5.10: classifica il fallimento per la UI (vedi LAST_ERROR in testa).
+    if imported_ok and resolve_running:
+        LAST_ERROR = 'ipc_refused'
+        _log.error("All connection attempts failed — Resolve is RUNNING and the module "
+                   "imported, but scriptapp refused (external scripting off / free edition "
+                   "/ duplicate install). See Diagnostics.")
+    elif not resolve_running:
+        LAST_ERROR = 'not_running'
+        _log.error("All connection attempts failed — Resolve process not detected")
+    else:
+        LAST_ERROR = 'import_failed'
+        _log.error("All connection attempts failed")
     return None
 
 

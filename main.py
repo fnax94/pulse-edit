@@ -95,7 +95,16 @@ def main():
             hc = run_health_check()
             boot_meta["resolve_script_ok"] = bool(hc.get("resolve_script_ok"))
             boot_meta["ffmpeg_ok"] = bool(hc.get("ffmpeg_ok"))
-            boot_meta["resolve_script_path"] = (hc.get("resolve_script_path") or "")[:200]
+            # v1.5.10 PRIVACY FIX: il path contiene la home dell'utente
+            # (/Users/<nome>/...) — sanitizzare come gli stack trace.
+            boot_meta["resolve_script_path"] = telemetry._sanitize_stack(
+                hc.get("resolve_script_path") or "")[:200]
+            # v1.5.10: edizione DR (Studio/free), pref external scripting e n.
+            # install — mai piu' casi support ciechi sull'edizione (John Kelly).
+            boot_meta["resolve_running"] = bool(hc.get("resolve_running"))
+            boot_meta["resolve_edition"] = (hc.get("resolve_edition") or "")[:120]
+            boot_meta["resolve_scripting_mode"] = str(hc.get("resolve_scripting_mode") or "")[:60]
+            boot_meta["resolve_installs"] = int(hc.get("resolve_installs") or 0)
         except Exception as _hc_err:
             boot_meta["health_check_error"] = str(_hc_err)[:200]
         telemetry.report_event("boot", boot_meta)

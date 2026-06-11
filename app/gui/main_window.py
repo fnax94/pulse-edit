@@ -455,7 +455,13 @@ class MainWindow(ctk.CTk):
     def _connect_resolve(self):
         self.resolve = resolve_bridge.connect()
         if not self.resolve:
-            self.conn_label.configure(text=t("resolve_not_found"), text_color="red")
+            # v1.5.10: distingui "Resolve non c'e'" da "Resolve gira ma rifiuta
+            # lo scripting" (pref External scripting=None / edizione free /
+            # doppio install) — prima entrambi mostravano resolve_not_found.
+            if getattr(resolve_bridge, "LAST_ERROR", None) == "ipc_refused":
+                self.conn_label.configure(text=t("resolve_refused"), text_color="red")
+            else:
+                self.conn_label.configure(text=t("resolve_not_found"), text_color="red")
             return
 
         self.project = self.resolve.GetProjectManager().GetCurrentProject()
@@ -520,6 +526,17 @@ class MainWindow(ctk.CTk):
         custom = resolve_bridge.load_custom_resolve_path()
 
         tips = []
+        # v1.5.10 — caso John Kelly: import OK ma Resolve rifiuta l'IPC. Va PRIMA
+        # degli altri check (e' il piu' specifico) e non deve mai piu' cadere nel
+        # fallback "Everything looks good!".
+        if "scriptapp('Resolve'): None" in info:
+            tips.append("• Resolve is RUNNING but refused the scripting connection. In order of likelihood:\n"
+                        "   1) DaVinci Resolve → Preferences → System → General → set\n"
+                        "      'External scripting using' to LOCAL → Save → restart Resolve.\n"
+                        "   2) Verify it's DaVinci Resolve STUDIO: menu DaVinci Resolve → About\n"
+                        "      must say 'Studio' (the free edition does not allow external apps).\n"
+                        "   3) If you have two Resolve installs (website + App Store), remove one\n"
+                        "      — see the MISMATCH/Multiple installs lines above.")
         if "Resolve running: False" in info:
             tips.append("• Resolve not detected — close and reopen DaVinci Resolve, then click Refresh")
         if "RESOLVE_SCRIPT_LIB = (not set)" in info or "RESOLVE_SCRIPT_LIB: (not set)" in info:
