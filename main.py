@@ -108,9 +108,11 @@ def main():
         except Exception as _hc_err:
             boot_meta["health_check_error"] = str(_hc_err)[:200]
         telemetry.report_event("boot", boot_meta)
-        # Alert immediato se DR scripting NON trovato — questo e' il blocker n.1
+        # Alert immediato se DR scripting NON trovato — questo e' il blocker n.1.
+        # Si chiamava «license_fail» e non c'entra con la licenza: l'alert Telegram faceva pensare
+        # a un pagamento rotto (03/09/2026). Il worker accetta entrambi i nomi per i client vecchi.
         if not boot_meta.get("resolve_script_ok"):
-            telemetry.report_event("license_fail", {
+            telemetry.report_event("resolve_check_fail", {
                 "kind": "resolve_script_not_found",
                 "message": "DaVinciResolveScript.py not found — plugin will not work",
                 "path_tried": boot_meta.get("resolve_script_path", ""),

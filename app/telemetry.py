@@ -3,7 +3,7 @@
 Cosa fa:
 - Invia eventi a https://license-server.abtools.workers.dev/event
 - Anonimo: solo device_id (SHA256 hostname truncato), product, version, OS
-- Eventi: boot, crash, workflow_success/fail, beat_detect_fail, render_fail
+- Eventi: boot, crash, workflow_success/fail, beat_detect_fail, render_fail, resolve_check_fail (era «license_fail»: non e' una licenza, e' il check scripting Resolve all'avvio)
 - Opt-out: rispetta il flag in user settings (`telemetry_enabled = false`)
 - Best-effort: thread daemon, timeout 4s, errore silenzioso (mai blocca l'app)
 
